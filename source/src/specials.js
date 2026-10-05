@@ -79,7 +79,8 @@ export class Projectile {
   dispose(world) {
     this.dead = true;
     world.scene.remove(this.mesh);
-    if (this.chain) { world.scene.remove(this.chain); this.chain.geometry.dispose(); }
+    if (this.chain) { world.scene.remove(this.chain); this.chain.geometry.dispose(); this.chain.material.dispose(); }
+    this.glow?.material.dispose();
     this.mesh.material.dispose();
   }
 }

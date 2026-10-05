@@ -617,6 +617,8 @@ export class Fighter {
 
   applyDamage(amount, src, world, quiet) {
     if (!this.alive || amount <= 0) return;
+    // once a round is decided nothing (fire ring, poison, a stray projectile) can hurt the survivors
+    if (world.phase === 'roundOver' || world.phase === 'matchOver') return;
     this.hp -= amount;
     if (src && src !== this && quiet) src.stats.damage += amount;
     if (this.hp <= 0) {

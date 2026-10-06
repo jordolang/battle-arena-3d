@@ -10,7 +10,7 @@ import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
-import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText } from './tournament.js';
+import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser } from './tournament.js';
 
 export const PROTOCOL = 4;
 export const MAX_PLAYERS = 8;
@@ -153,6 +153,7 @@ export class NetSession {
     this.chat = [];
     this.chatAt = new Map();
     const admin = kind === 'tournament';
+    this.fundraisers = [];
     this.lobby = {
       code, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
@@ -165,8 +166,11 @@ export class NetSession {
         prize: cleanText(tournament?.prize, 160), teamSize: Math.min(4, Math.max(1, tournament?.teamSize | 0 || 3)),
         wins: Math.min(3, Math.max(1, tournament?.wins | 0 || 2)), fill: tournament?.fill !== false,
         status: 'open', bracket: null, current: null, champion: null, last: '',
+        registered: !!tournament?.groups?.length,
       };
-      this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their fundraising group; everyone else can watch.`);
+      // the admin's fundraiser codes stay here, out of the lobby every player receives
+      this.fundraisers = tournament?.groups || [];
+      this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their ${this.lobby.tournament.registered ? 'fundraiser code' : 'fundraising group'}; everyone else can watch.`);
     }
     transport.onMessage = (id, msg, ch) => this.hostReceive(id, msg, ch);
     transport.onPeerJoin = (id) => { this.heard.set(id, performance.now()); };
@@ -194,8 +198,20 @@ export class NetSession {
         let name = cleanName(msg.name);
         const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
         for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
-        // in a tournament your fundraising group is your team; without one you can only watch
-        const group = cleanGroup(msg.group);
+        // in a tournament your fundraising group is your team; without one you can only watch.
+        // Once the admin has made fundraiser codes, fighters must bring one: it names their group.
+        let group = cleanGroup(msg.group);
+        if (tourney && msg.role === 'player' && this.fundraisers?.length) {
+          const reg = findFundraiser(this.fundraisers, group);
+          if (!reg) {
+            const typedName = this.fundraisers.some((g) => groupKey(g.name) === groupKey(group));
+            this.reject(id, typedName
+              ? 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.'
+              : 'That fundraiser code is not registered for this tournament. Check it with your organizer, or join to watch.');
+            return;
+          }
+          group = cleanGroup(reg.name);
+        }
         const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
         this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
         if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);

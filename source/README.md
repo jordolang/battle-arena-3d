@@ -38,8 +38,13 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   win a match and whether CPUs fill short teams. Share the tournament code (or the `?t=CODE` link) with the teams ahead
   of time. The code is saved in the admin's browser, so the same code works on the day. At the agreed time press
   **Open tournament room**, wait for the teams, **Draw the bracket**, then **Start** each match.
-- **Teams**: enter the fundraising group on the title screen, open Tournament, type the code and press **Fight for my
-  group**. Pick your fighter in the lobby.
+- **Fundraiser codes**: under **Fundraiser codes** on the admin card, type each fundraising group's name and press
+  **Make code** to get a registration code like `JM-7KQ4-X2PD` (Copy sends a ready-to-paste message for that group).
+  Once any codes exist, only players who type one of them on the title screen can fight, and they are put on the team
+  of the group that code belongs to; everyone else can still watch. With no codes, any group name typed is accepted.
+  Codes live only in the admin's browser (the host checks them when players join), so host from the same browser.
+- **Teams**: enter your fundraiser code (or, if the admin made none, your group's name) on the title screen, open
+  Tournament, type the tournament code and press **Fight for my group**. Pick your fighter in the lobby.
 - **Viewers**: type the code and press **Watch**. While watching, the arrow keys pick which fighter the camera follows
   and up shows the whole field.
 - **Chat**: press **T** in the lobby or during a match, Enter sends, Esc closes. The admin's messages are marked Admin,

@@ -12,13 +12,38 @@ export function cleanGroup(s) { return String(s ?? '').replace(/[\u0000-\u001f<>
 export function cleanText(s, max) { return String(s ?? '').replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, max); }
 
 export function defaultTournament() {
-  return { name: 'José Madrid Salsa Showdown', startsAt: '', prize: '', teamSize: 3, wins: 2, fill: true, code: '' };
+  return { name: 'José Madrid Salsa Showdown', startsAt: '', prize: '', teamSize: 3, wins: 2, fill: true, code: '', groups: [] };
 }
 export function loadTournamentSettings() {
-  try { return { ...defaultTournament(), ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return defaultTournament(); }
+  let t;
+  try { t = { ...defaultTournament(), ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { t = defaultTournament(); }
+  if (!Array.isArray(t.groups)) t.groups = [];
+  t.groups = t.groups.filter((g) => g && typeof g.code === 'string' && typeof g.name === 'string');
+  return t;
 }
 export function saveTournamentSettings(t) {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(t)); } catch { /* storage unavailable */ }
+}
+
+// Fundraiser registration codes: the admin makes one per fundraising group and hands it to that
+// group's participants. They type it on the title screen, and the admin's browser (which hosts the
+// tournament) swaps it for the group's name when they join. The codes never leave the admin's browser.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I lookalikes
+export function fundraiserCode(taken = []) {
+  const used = new Set(taken.map(normFundraiserCode));
+  for (;;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    const chars = [...bytes].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+    const code = `JM-${chars.slice(0, 4)}-${chars.slice(4)}`;
+    if (!used.has(normFundraiserCode(code))) return code;
+  }
+}
+// "jm 7kq4 x2pd", "JM7KQ4X2PD" and "JM-7KQ4-X2PD" are the same code
+export function normFundraiserCode(s) { return String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^(?!JM)(?=[A-Z0-9]{8}$)/, 'JM'); }
+// the registered group for what a player typed, or null
+export function findFundraiser(groups, typed) {
+  const k = normFundraiserCode(typed);
+  return (k && groups?.find((g) => normFundraiserCode(g.code) === k)) || null;
 }
 
 // Teams present in the lobby: { key: { name, members[] } } in the order they first appeared.

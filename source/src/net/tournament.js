@@ -12,7 +12,7 @@ export function cleanGroup(s) { return String(s ?? '').replace(/[\u0000-\u001f<>
 export function cleanText(s, max) { return String(s ?? '').replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, max); }
 
 export function defaultTournament() {
-  return { name: 'José Madrid Salsa Showdown', startsAt: '', prize: '', teamSize: 3, wins: 2, fill: true, code: '', groups: [] };
+  return { name: 'José Madrid Salsa Showdown', startsAt: '', prize: '', teamSize: 3, wins: 2, fill: true, code: '', groups: [], registration: 'code' };
 }
 export function loadTournamentSettings() {
   let t;
@@ -44,6 +44,26 @@ export function normFundraiserCode(s) { return String(s ?? '').toUpperCase().rep
 export function findFundraiser(groups, typed) {
   const k = normFundraiserCode(typed);
   return (k && groups?.find((g) => normFundraiserCode(g.code) === k)) || null;
+}
+
+// Codes made in the José Madrid Salsa admin panel (website or desktop app) are checked by the site.
+// Resolves to the group's name, or null when the code is unknown or revoked; throws when the site
+// can't be reached. `?codes-api=` overrides the address for testing.
+export const CODES_API = new URLSearchParams(globalThis.location?.search || '').get('codes-api') || 'https://www.josemadrid.net/api/arena/game-codes/verify';
+const verified = new Map();
+export async function verifyFundraiserCode(typed) {
+  const code = normFundraiserCode(typed);
+  if (verified.has(code)) return verified.get(code);
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const res = await fetch(CODES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: `JM-${code.slice(2, 6)}-${code.slice(6)}` }), signal: ctl.signal });
+    if (!res.ok) throw new Error(`verify ${res.status}`);
+    const data = await res.json();
+    const name = data?.valid && typeof data.name === 'string' ? cleanGroup(data.name) || null : null;
+    if (name) verified.set(code, name); // only cache hits, so a code made a minute ago still works
+    return name;
+  } finally { clearTimeout(timer); }
 }
 
 // Teams present in the lobby: { key: { name, members[] } } in the order they first appeared.

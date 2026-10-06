@@ -76,6 +76,7 @@ export class TournamentMenus {
       opt('t-size', 'Fighters per team', t.teamSize),
       opt('t-wins', 'Rounds to win a match', t.wins),
       opt('t-fill', 'Short teams', t.fill ? 'CPU fills in' : 'Fight short'),
+      opt('t-reg', 'Who can fight', t.registration === 'open' ? 'Any group name' : 'Fundraiser code'),
     ].join('');
     const link = /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}?t=${t.code}` : '';
     this.screen.querySelector('.t-admin-code').innerHTML = `Your tournament code is <b class="code-chip">${t.code}</b>. Share it${link ? ` (or <span class="invite">${esc(link)}</span>)` : ''} with the teams before the day. <button class="nav link" data-act="t-newcode">New code</button>`;
@@ -84,9 +85,9 @@ export class TournamentMenus {
   // The admin's list of fundraising groups and their registration codes.
   renderCodes(focusAct = null, focusCode = null) {
     const groups = this.settings.groups;
-    this.screen.querySelector('.t-codes-help').textContent = groups.length
-      ? 'Give each group its code. Only players who type a code from this list on the title screen can fight; anyone can still watch. Codes are saved in this browser, so host from here.'
-      : 'Make a code for each fundraising group and give it to that group\'s participants. Until you make one, any group name typed on the title screen can fight.';
+    this.screen.querySelector('.t-codes-help').textContent = this.settings.registration === 'open'
+      ? 'Who can fight is set to any group name, so codes are not checked. Switch it to Fundraiser code to require them.'
+      : 'Players fight with a fundraiser code typed on the title screen: one made here (saved in this browser, so host from here) or one made in the José Madrid Salsa admin panel. Anyone can watch.';
     this.screen.querySelector('.t-codes-list').innerHTML = groups.map((g) => `<div class="t-code-row"><span class="g">${esc(g.name)}</span><b class="code-chip">${esc(g.code)}</b>` +
       `<button class="nav link" data-act="t-copycode" data-id="${esc(g.code)}">Copy</button>` +
       `<button class="nav link kick" data-act="t-delcode" data-id="${esc(g.code)}" title="Remove ${esc(g.name)}">✕</button></div>`).join('') +
@@ -103,6 +104,7 @@ export class TournamentMenus {
     if (key === 't-size') t.teamSize = TEAM_SIZES[(TEAM_SIZES.indexOf(t.teamSize) + d + TEAM_SIZES.length) % TEAM_SIZES.length];
     else if (key === 't-wins') t.wins = ((t.wins - 1 + d + 3) % 3) + 1;
     else if (key === 't-fill') t.fill = !t.fill;
+    else if (key === 't-reg') { t.registration = t.registration === 'open' ? 'code' : 'open'; this.renderCodes(); }
     else if (key === 't-fighter') { this.session.pickFighter(d); this.render(true); return; }
     else return;
     saveTournamentSettings(t);

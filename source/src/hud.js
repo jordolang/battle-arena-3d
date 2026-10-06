@@ -3,6 +3,12 @@ import * as THREE from 'three';
 import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, COMBAT, WEAPONS, POWERUPS, BELT_SIZE, ARMOR_POINTS, keyLabel } from './config.js';
 import { itemIcon } from './items.js';
 
+// The four move keys, or one "LS" when they are a controller's left stick.
+function moveKeys(b, k) {
+  const sticks = ['up', 'down', 'left', 'right'].map((a) => String(b[a] || '').split(':')[1]);
+  if (sticks.join() === 'a1-,a1+,a0-,a0+') return '<kbd>LS</kbd>';
+  return `${k('up')}${k('left')}${k('down')}${k('right')}`;
+}
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -210,12 +216,13 @@ export class Hud {
 
   static controlHint(index, b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[a]))}</kbd>`;
-    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special${b.use ? ` · ${k('use')} gun or spell` : ''}${b.cycle ? ` · ${k('cycle')} next slot` : ''}`;
+    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${moveKeys(b, k)} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special${b.use ? ` · ${k('use')} gun or spell` : ''}${b.cycle ? ` · ${k('cycle')} next slot` : ''}`;
   }
 
   static onlineHint(b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[0][a]))}</kbd>`;
-    return `<b>You</b> ${k('up')}${k('left')}${k('down')}${k('right')} or arrows move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special · ${k('use')} or ${k('slot1')}-${k('slot4')} gun or spell · ${k('cycle')} next slot`;
+    const pad = String(b[0].punch).startsWith('Pad:');
+    return `<b>You</b> ${moveKeys(b[0], k)}${pad ? '' : ' or arrows'} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special · ${k('use')} or ${k('slot1')}${pad ? '' : '-'}${k(pad ? 'slot2' : 'slot4')}${pad ? `${k('slot3')}${k('slot4')}` : ''} gun or spell · ${k('cycle')} next slot`;
   }
 
   // "P1 Ember (Mage): = Meteor · - Flame Lance · 0 Ember Spray · I Hellfire Orb"

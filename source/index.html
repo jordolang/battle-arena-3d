@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Battle Arena 3D</title>
+<title>José Madrid Salsa Battle Arena</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,8 +28,14 @@
   <section class="screen" id="screen-title" hidden>
     <div class="title-wrap">
       <div class="eyebrow">2 to 8 fighters · free-for-all or teams</div>
-      <h1 class="logo">Battle<em>Arena 3D</em></h1>
+      <h1 class="logo"><img src="assets/jose-madrid-battle-arena-logo.webp" alt="José Madrid Salsa Battle Arena" width="640" height="640"></h1>
       <p class="tagline">Eight warriors, one blood-moon coliseum. Punch, kick, dodge, cast your spells and unleash your special until only one fighter, or one team, is left standing.</p>
+      <div class="fundraiser">
+        <div class="fr-head">Fundraiser members only</div>
+        <p>To fight in the arena you must be enrolled in a José Madrid Salsa fundraising group. Enter your group's name or code to play.</p>
+        <label class="field" for="fr-group"><span class="lbl">Fundraising group</span><input id="fr-group" class="nav" data-next="[data-act=to-setup]" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Group name or code"></label>
+        <p class="fr-error" role="alert"></p>
+      </div>
       <div class="menu-list">
         <button class="nav big" data-act="to-setup">Fight</button>
         <button class="nav big" data-act="to-online">Fight online</button>

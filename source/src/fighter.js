@@ -4,6 +4,8 @@ import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST,
   STAMINA, STAMINA_MAX, DODGE, COMBAT, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
 import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
+import { dressFighter } from './wardrobeModels.js';
+import { bodyDef } from './cosmetics.js';
 
 const FREE_STATES = new Set(['idle']);
 const TAU = Math.PI * 2;
@@ -18,13 +20,15 @@ export function spared(a, b, world) { return allies(a, b) && !world.friendlyFire
 let nextId = 1;
 
 export class Fighter {
-  constructor(def, slot, controller) {
+  // `look` is the fighter's cosmetics (cosmetics.js): outfit, headgear, back piece and victory pose.
+  constructor(def, slot, controller, look) {
     this.id = nextId++;
     this.def = def;
     this.slot = slot;
     this.controller = controller;
     this.name = def.name;
-    this.model = buildFighterModel(def);
+    this.model = dressFighter(buildFighterModel(bodyDef(def, look)), def, look);
+    this.look = this.model.look;
     this.radius = 0.42 * def.scale;
     this.maxHp = def.health;
     this.pos = new THREE.Vector3();

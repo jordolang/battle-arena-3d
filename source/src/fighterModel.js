@@ -4,6 +4,7 @@
 // thirty draw calls however much detail it carries.
 import * as THREE from 'three';
 import { buildGear, buildArmor } from './items.js';
+import { swayCape } from './wardrobeModels.js';
 
 const geoCache = new Map();
 function geo(key, make) {
@@ -47,12 +48,7 @@ function merged(key, parts) {
 // Joint names used by poses.
 export const JOINTS = ['hips', 'spine', 'chest', 'head', 'shL', 'elL', 'shR', 'elR', 'hipL', 'knL', 'hipR', 'knR'];
 
-// Profiles (radius, y) for muscled limbs, measured from the joint downwards.
-const UPPER_ARM = [[0, -0.33], [0.048, -0.325], [0.054, -0.29], [0.066, -0.2], [0.075, -0.12], [0.078, -0.05], [0.07, 0.02], [0.045, 0.06], [0, 0.07]];
-const SLEEVE = [[0.083, -0.13], [0.086, -0.06], [0.08, 0.02], [0.05, 0.075], [0, 0.08]];
-const FOREARM = [[0, -0.28], [0.038, -0.275], [0.04, -0.22], [0.05, -0.15], [0.06, -0.07], [0.062, -0.02], [0.05, 0.02], [0, 0.035]];
-const THIGH = [[0, -0.5], [0.062, -0.49], [0.066, -0.44], [0.085, -0.32], [0.1, -0.18], [0.108, -0.06], [0.098, 0.03], [0.06, 0.07], [0, 0.08]];
-const SHIN = [[0, -0.47], [0.047, -0.46], [0.05, -0.4], [0.064, -0.28], [0.076, -0.17], [0.07, -0.06], [0.062, 0.02], [0, 0.045]];
+import { UPPER_ARM, SLEEVE, FOREARM, THIGH, SHIN } from './bodyShapes.js';
 const NECK = [[0, -0.02], [0.058, -0.015], [0.055, 0.08], [0.05, 0.13], [0, 0.135]];
 
 // Hair styles: [geometry, position, rotation, scale] parts merged into one mesh.
@@ -111,8 +107,9 @@ function buildHead(def, head, skinMat, hairMat, giMat, eyeMat) {
   const hp = hairParts(def.hairStyle);
   // a short beard along the jaw line, leaving the mouth clear
   if (def.beard) hp.push([geo('beard', () => new THREE.SphereGeometry(0.1, 14, 8, 0, Math.PI, Math.PI * 0.6, Math.PI * 0.32)), [0, 0.1, 0.03], [0, 0, 0], [0.97, 1.0, 1.04]]);
+  let hair = null;
   if (hp.length) {
-    const hair = new THREE.Mesh(merged(`hair_${def.id}`, hp), hairMat);
+    hair = new THREE.Mesh(merged(`hair_${def.hairStyle}_${def.beard ? 1 : 0}`, hp), hairMat);
     hair.castShadow = true;
     head.add(hair);
   }
@@ -122,7 +119,7 @@ function buildHead(def, head, skinMat, hairMat, giMat, eyeMat) {
     mask.scale.set(0.98, 1.1, 1.06);
     head.add(mask);
   }
-  return { eyes };
+  return { eyes, hair };
 }
 
 function buildHand(side) {
@@ -168,22 +165,23 @@ export function buildFighterModel(def) {
   const torso = mesh(sphere(0.2), giMat); torso.position.y = 0.12; torso.scale.set(1.24, 1.22, 0.84); chest.add(torso);
   const collar = mesh(merged('collar', [[sphereLo(0.06), [0.08, 0.28, 0.0], [0, 0, 0], [1.4, 0.6, 1.0]], [sphereLo(0.06), [-0.08, 0.28, 0.0], [0, 0, 0], [1.4, 0.6, 1.0]]]), skinMat, false);
   chest.add(collar);
-  const lapel = mesh(box(0.06, 0.34, 0.03), trimMat, false); lapel.position.set(0.03, 0.12, 0.165); lapel.rotation.set(-0.12, 0, 0.42); chest.add(lapel);
+  const parts = { pelvis, belt, tails, abdomen, torso, collar, sleeve: {}, upperArm: {}, wrap: {}, fist: {}, thigh: {}, shin: {}, ankle: {}, foot: {} };
+  const lapel = mesh(box(0.06, 0.34, 0.03), trimMat, false); parts.lapel = lapel; lapel.position.set(0.03, 0.12, 0.165); lapel.rotation.set(-0.12, 0, 0.42); chest.add(lapel);
 
   const head = new THREE.Group(); head.position.y = 0.38; chest.add(head); J.head = head;
-  const { eyes } = buildHead(def, head, skinMat, hairMat, giMat, eyeMat);
-  addAccessory(def.accessory, head, chest, { giMat, trimMat, metalMat });
+  const { eyes, hair } = buildHead(def, head, skinMat, hairMat, giMat, eyeMat);
+  const extras = addAccessory(def.accessory, head, chest, { giMat, trimMat, metalMat });
 
   let grip = null, hand = {};
   for (const side of ['L', 'R']) {
     const sx = side === 'L' ? 1 : -1;  // fighter faces +Z, so its left is +X
     const sh = new THREE.Group(); sh.name = 'sh' + side; sh.position.set(sx * 0.29, 0.25, 0); chest.add(sh); J['sh' + side] = sh;
-    sh.add(mesh(lathe('upperArm', UPPER_ARM), skinMat));
-    sh.add(mesh(lathe('sleeve', SLEEVE), giMat));
+    sh.add(parts.upperArm[side] = mesh(lathe('upperArm', UPPER_ARM), skinMat));
+    sh.add(parts.sleeve[side] = mesh(lathe('sleeve', SLEEVE), giMat));
     const el = new THREE.Group(); el.name = 'el' + side; el.position.y = -0.31; sh.add(el); J['el' + side] = el;
     el.add(mesh(lathe('forearm', FOREARM), skinMat));
-    const wrap = mesh(geo('wrap', () => new THREE.CylinderGeometry(0.046, 0.05, 0.11, 12)), trimMat, false); wrap.position.y = -0.2; el.add(wrap);
-    const fist = mesh(buildHand(side), skinMat); fist.position.y = -0.31; el.add(fist);
+    const wrap = mesh(geo('wrap', () => new THREE.CylinderGeometry(0.046, 0.05, 0.11, 12)), trimMat, false); wrap.position.y = -0.2; el.add(wrap); parts.wrap[side] = wrap;
+    const fist = mesh(buildHand(side), skinMat); fist.position.y = -0.31; el.add(fist); parts.fist[side] = fist;
     el.userData.fist = fist;
     hand[side] = el;
     if (side === 'R') {
@@ -196,12 +194,12 @@ export function buildFighterModel(def) {
     }
 
     const hip = new THREE.Group(); hip.name = 'hip' + side; hip.position.set(sx * 0.11, -0.05, 0); hips.add(hip); J['hip' + side] = hip;
-    hip.add(mesh(lathe('thigh', THIGH), giMat));
+    hip.add(parts.thigh[side] = mesh(lathe('thigh', THIGH), giMat));
     const kn = new THREE.Group(); kn.name = 'kn' + side; kn.position.y = -0.46; hip.add(kn); J['kn' + side] = kn;
-    kn.add(mesh(lathe('shin', SHIN), giMat));
-    const ankle = mesh(geo('ankleWrap', () => new THREE.CylinderGeometry(0.052, 0.056, 0.12, 12)), trimMat, false); ankle.position.y = -0.36; kn.add(ankle);
+    kn.add(parts.shin[side] = mesh(lathe('shin', SHIN), giMat));
+    const ankle = mesh(geo('ankleWrap', () => new THREE.CylinderGeometry(0.052, 0.056, 0.12, 12)), trimMat, false); ankle.position.y = -0.36; kn.add(ankle); parts.ankle[side] = ankle;
     const foot = mesh(merged('foot', [[sphereLo(0.06), [0, 0, 0.03], [0, 0, 0], [0.95, 0.75, 2.0]], [box(0.11, 0.025, 0.25), [0, -0.035, 0.035]]]), trimMat);
-    foot.position.set(0, -0.475, 0.0); kn.add(foot);
+    foot.position.set(0, -0.475, 0.0); kn.add(foot); parts.foot[side] = foot;
   }
 
   // Floor marker in the fighter's colour so everyone can be told apart.
@@ -238,6 +236,7 @@ export function buildFighterModel(def) {
   return {
     root, body, joints: J, ring, ice, aura, shell, mats, eyeMat, current: rest, hipsBaseY: 0.98,
     torso, eyes, tails, grip, holster, armor, gear: {}, held: null, holstered: null,
+    parts, skinMat, hair, headExtras: extras.head, builtinCape: extras.cape, cape: null, victory: 'fist',
     blinkAt: 1 + Math.random() * 3, lookYaw: 0,
   };
 }
@@ -297,6 +296,7 @@ export function animateLife(model, f, dt, lookAt) {
   const speed = Math.hypot(f.vel.x, f.vel.z);
   const swing = Math.min(1.2, speed * 0.12) + Math.sin(f.animTime * 9) * Math.min(0.15, speed * 0.02);
   model.tails.rotation.x += (swing - model.tails.rotation.x) * Math.min(1, dt * 8);
+  swayCape(model, speed, f.animTime, dt);
 }
 function wrap(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
 
@@ -364,18 +364,24 @@ export function applyReward(model, tier) {
   model.rewardRing = ring;
 }
 
+// Returns what headgear and back pieces hide: { head: [meshes], cape: mesh|null }.
 function addAccessory(kind, head, chest, { giMat, trimMat, metalMat }) {
+  const out = { head: [], cape: null };
   if (kind === 'horns') {
     for (const side of [-1, 1]) {
       const horn = new THREE.Mesh(geo('horn', () => new THREE.ConeGeometry(0.035, 0.2, 10)), metalMat);
       horn.position.set(side * 0.1, 0.28, 0.0); horn.rotation.z = side * -0.5;
       head.add(horn);
+      out.head.push(horn);
     }
   } else if (kind === 'hood') {
     const hood = new THREE.Mesh(geo('hood', () => new THREE.ConeGeometry(0.2, 0.42, 16, 1, true)), giMat);
     hood.position.set(0, 0.2, -0.03); hood.material = giMat; head.add(hood);
     const cape = new THREE.Mesh(box(0.42, 0.7, 0.03), trimMat); cape.position.set(0, -0.15, -0.17); cape.rotation.x = 0.12; chest.add(cape);
+    out.head.push(hood);
+    out.cape = cape;
   }
+  return out;
 }
 
 // ---- Poses -------------------------------------------------------------
@@ -511,12 +517,57 @@ const dodgePose = {
 };
 const frozenPose = { ...guard, spine: [-0.15, 0, 0], shL: [-0.6, 0, 0.7], shR: [-0.5, 0, -0.7] };
 
-function victoryPose(t) {
-  const b = Math.abs(Math.sin(t * 4));
-  return {
-    shR: [-3.0, 0, -0.25], elR: [-0.2, 0, 0], shL: [0.2, 0, 0.4], elL: [-1.8, 0, 0],
-    head: [-0.35, 0, 0], spine: [-0.12, 0, 0], hipL: [0, 0, 0.12], hipR: [0, 0, -0.12], lift: b * 0.08,
-  };
+// Victory poses are cosmetics (VICTORIES in cosmetics.js); the fighter's model says which one it uses.
+export function victoryPose(t, kind = 'fist') {
+  switch (kind) {
+    case 'salsa': {
+      // basic salsa: step forward and back on a one-two-three, hips swaying, arms up in a dance frame
+      const beat = t * 5.2, s = Math.sin(beat), c = Math.cos(beat);
+      return {
+        hips: [0, 0.22 * s, 0.09 * c],
+        hipL: [-0.45 * Math.max(0, s), 0, 0.1], knL: [0.2 + 0.45 * Math.max(0, s), 0, 0],
+        hipR: [0.4 * Math.max(0, -s), 0, -0.1], knR: [0.2 + 0.45 * Math.max(0, -s), 0, 0],
+        spine: [0.02, -0.12 * s, -0.08 * c], chest: [-0.05, -0.15 * s, 0], head: [-0.12, 0.3 * s, 0.05 * c],
+        // left hand held high and out as if leading a partner, right hand low across the body
+        shL: [-1.57, 0, 1.15 + 0.12 * c], elL: [-1.2, 0, 0], shR: [-0.75, 0, 0.25 + 0.1 * s], elR: [-1.3, 0, 0],
+        lift: Math.abs(c) * 0.035 - 0.05,
+      };
+    }
+    case 'flex': {
+      // double biceps: upper arms out level, forearms straight up, chest puffed
+      const p = 0.5 + 0.5 * Math.sin(t * 3.2);
+      return {
+        shL: [-1.57, 0, 1.45 + 0.08 * p], elL: [-1.75 - 0.35 * p, 0, 0], shR: [-1.57, 0, -1.45 - 0.08 * p], elR: [-1.75 - 0.35 * p, 0, 0],
+        chest: [-0.14 - 0.06 * p, 0, 0], spine: [-0.06, 0, 0], head: [-0.3, 0, 0],
+        hipL: [0, 0, 0.22], hipR: [0, 0, -0.22], knL: [0.1, 0, 0], knR: [0.1, 0, 0], lift: -0.02 + 0.015 * p,
+      };
+    }
+    case 'beckon': {
+      // one hand out in front curling the fingers in: "come on then"
+      const w = Math.max(0, Math.sin(t * 6.5));
+      return {
+        shR: [-1.45, 0, -0.05], elR: [-0.15 - 1.5 * w, 0, 0], shL: [-0.1, 0, 0.55], elL: [-0.6, 0, 0],
+        chest: [-0.12, 0.3, 0], spine: [-0.05, 0.15, 0], head: [-0.25, -0.25, 0.15],
+        hipL: [-0.2, 0, 0.28], knL: [0.25, 0, 0], hipR: [0.15, 0, -0.22], knR: [0.15, 0, 0], lift: -0.04,
+      };
+    }
+    case 'bow': {
+      // a matador's bow: sweep down, hold, come back up
+      const d = Math.min(1, Math.max(0, Math.sin(t * 1.2) * 1.6 + 0.3));
+      return {
+        spine: [0.5 * d, 0, 0], chest: [0.3 * d, 0, 0], head: [0.2 * d, 0, 0],
+        shR: [-0.7 - 0.3 * d, 0, 0.55], elR: [-1.5, 0, 0], shL: [0.5 + 0.6 * d, 0, 0.5 + 0.5 * d], elL: [-0.15, 0, 0],
+        hipL: [-0.15 * d, 0, 0.06], knL: [0.15 * d, 0, 0], hipR: [0.45 * d, 0, -0.06], knR: [0.2 + 0.2 * d, 0, 0], lift: -0.05 * d,
+      };
+    }
+    default: {
+      const b = Math.abs(Math.sin(t * 4));
+      return {
+        shR: [-3.0, 0, -0.25], elR: [-0.2, 0, 0], shL: [0.2, 0, 0.4], elL: [-1.8, 0, 0],
+        head: [-0.35, 0, 0], spine: [-0.12, 0, 0], hipL: [0, 0, 0.12], hipR: [0, 0, -0.12], lift: b * 0.08,
+      };
+    }
+  }
 }
 
 export function computePose(f) {
@@ -534,7 +585,7 @@ export function computePose(f) {
     }
     case 'knockdown': case 'ko': case 'getup': return downPose;
     case 'frozen': return frozenPose;
-    case 'victory': return victoryPose(t);
+    case 'victory': return victoryPose(t, f.model?.victory);
     default:
       if (!f.grounded) return jumpPose;
       return runPose(f.runPhase, f.moveAmount);

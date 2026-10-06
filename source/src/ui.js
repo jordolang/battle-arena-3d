@@ -5,6 +5,7 @@ import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BIND
 import { saveBindings, devices } from './input.js';
 import { padLabel, PAD_RESERVED } from './padmap.js';
 import { lookupGroup, donateUrl, REWARDS } from './fundraiser.js';
+import { wardrobe, lookSummary, SLOT_LABELS, RARITY } from './cosmetics.js';
 
 const SETUP_KEY = 'battle-arena.setup.v1';
 const GROUP_KEY = 'battle-arena.fundraiser-group.v1';
@@ -47,12 +48,12 @@ const TOUCH = ['auto', 'on', 'off'];
 const TOUCH_SIZES = [0.85, 1, 1.18];
 
 export class Menus {
-  constructor({ keyboard, bindings, pads, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow }) {
+  constructor({ keyboard, bindings, pads, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow, onSelect, onFavourite }) {
     this.kb = keyboard;
     this.pads = pads;
     this.bindings = bindings;
     this.setup = loadSetup();
-    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow };
+    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow, onSelect, onFavourite };
     this.active = null;
     this.back = {};
     this.rebinding = null;
@@ -179,6 +180,13 @@ export class Menus {
   }
 
   activate(el) {
+    // a fighter button opens the character select screen (left and right still flick through fighters)
+    // (data-cs is a slot number on the Versus CPU screen, or a name the online menus handle)
+    if (el.dataset.cs != null && this.select) {
+      if (/^\d+$/.test(el.dataset.cs)) this.openSlotSelect(+el.dataset.cs);
+      else this.cb.onSelect?.(el.dataset.cs, el);
+      return;
+    }
     if (el.dataset.opt) { this.change(el, 1); return; }
     if (el.dataset.act) this.runAct(el.dataset.act, el);
   }
@@ -278,7 +286,9 @@ export class Menus {
     const gated = act === 'net-host' || act === 'net-join' || act === 'net-queue' || act === 't-join-fight' ||
       (act === 'to-online' && this.active === 'title');
     if (gated && !this.requireGroup()) return;
+    if (act.startsWith('cs-')) { this.select?.onAct(act, el); return; }
     switch (act) {
+      case 'to-locker': this.openLocker(); break;
       case 'to-setup': this.show('setup'); break;
       case 'to-training': this.show('training'); break;
       case 'to-title': this.show('title'); break;
@@ -319,6 +329,40 @@ export class Menus {
   }
 
   focusAct(act) { this.screens[this.active]?.querySelector(`[data-act="${act}"]`)?.focus(); }
+
+  // Character select for a slot on the Versus CPU screen. Slot 0 is you, with the wardrobe; the rest are CPUs.
+  openSlotSelect(i) {
+    const slot = this.setup.slots[i];
+    const you = i < this.players; // people on this device share the wardrobe
+    this.select.open({
+      context: you ? (this.players > 1 ? `Versus CPU · P${i + 1}` : 'Versus CPU') : `Versus CPU · opponent ${i - this.players + 1}`,
+      heading: you ? 'Choose your fighter' : 'Choose a CPU fighter',
+      fighter: slot.fighter, wardrobe: you,
+      note: 'CPU fighters dress themselves, sometimes in gear you have not unlocked yet.',
+      confirm: (def) => (you ? (def ? `Fight as ${def.name}` : 'Fight as a random fighter') : (def ? `Send in ${def.name}` : 'Random CPU')),
+      onConfirm: (f) => { slot.fighter = f; saveSetup(this.setup); },
+      onClose: () => this.screens.setup.querySelector(`[data-cs="${i}"]`)?.focus({ preventScroll: true }),
+      back: 'setup',
+    });
+  }
+
+  // The locker room: browse every fighter and dress them; the one you confirm becomes your usual fighter.
+  openLocker() {
+    const back = this.active && this.active !== 'select' ? this.active : 'title';
+    const fav = wardrobe.favourite >= 0 ? wardrobe.favourite : Math.max(0, this.setup.slots[0].fighter);
+    this.select.open({
+      context: 'Locker room', heading: 'Fighters & outfits', fighter: fav, random: false,
+      confirm: (def) => `Make ${def.name} my fighter`,
+      onConfirm: (f) => {
+        wardrobe.favourite = f;
+        this.setup.slots[0].fighter = f;
+        saveSetup(this.setup);
+        this.cb.onFavourite?.(f);
+      },
+      onClose: () => this.focusAct('to-locker'),
+      back,
+    });
+  }
 
   // Fight is you against CPU fighters, free-for-all. Up to four people on one device
   // (keyboard sections and controllers) can join in as P1-P4.
@@ -397,15 +441,16 @@ export class Menus {
       const who = !human ? 'CPU' : this.players === 1 ? 'You' : `P${i + 1}`;
       const whoColor = human ? `style="color:${PLAYER_COLORS[i]}"` : '';
       const how = human ? `<small class="how">${esc(this.deviceText(i))}</small>` : '';
+      const dress = human && def ? lookSummary(wardrobe.lookFor(slot.fighter)) : '';
       const sw = def ? hex(def.eyes) : '#888';
       const t = tc ? slot.team % tc : -1;
       const teamBtn = tc ? `<button class="nav opt team" data-opt="team" data-i="${i}" style="--tc:${hex(TEAM_COLORS[t])}"><span>${esc(cleanTeamName(s.teams.names[t], t))}</span></button>` : '';
       return `<div class="slot" style="--fc:${sw}">
         <span class="slot-n">${i + 1}</span>
         <div class="who"><span ${whoColor}>${who}</span>${how}</div>
-        <button class="nav opt fighter" data-opt="fighter" data-i="${i}">
+        <button class="nav opt fighter" data-opt="fighter" data-i="${i}" data-cs="${i}">
           <span class="fname">${def ? esc(def.name) : 'Random'}</span>
-          <span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
+          <span class="ftitle">${dress ? `<em class="dress">${esc(dress)}</em> · ` : ''}${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
         </button>${teamBtn}
       </div>`;
     }).join('');
@@ -414,7 +459,7 @@ export class Menus {
     this.screens.setup.querySelector('.setup-note').textContent = (this.players === 1
       ? `You against ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}`
       : `${this.players} players${cpus ? ` and ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}` : ''}, everyone for themselves`) +
-      ', last one standing takes the round. Grab the power-ups and hit them from behind.';
+      ', last one standing takes the round. Press Enter on a fighter to see them up close and change their look.';
   }
 
   updateTeamLabels() {
@@ -555,10 +600,23 @@ export class Menus {
     const sorted = [...fighters].sort((a, b) => (teamed ? (b.team === champ.team) - (a.team === champ.team) : 0) ||
       b.stats.wins - a.stats.wins || b.stats.kos - a.stats.kos || b.stats.damage - a.stats.damage);
     el.querySelector('thead').innerHTML = `<tr><th>Fighter</th><th>Played by</th>${teamed ? '<th>Team</th>' : ''}<th>Rounds</th><th>KOs</th><th>Damage</th></tr>`;
+    this.renderUnlocks();
     el.querySelector('tbody').innerHTML = sorted.map((f) => `<tr>
       <td><i class="sw" style="background:${hex(f.def.eyes)}"></i>${esc(f.name)}</td>
       <td>${esc(f.label)}</td>${teamed ? `<td style="color:${hex(f.teamColor ?? 0xffffff)}">${esc(f.teamName)}</td>` : ''}<td>${f.stats.wins}</td><td>${f.stats.kos}</td><td>${Math.round(f.stats.damage)}</td></tr>`).join('');
     this.show('results');
+  }
+
+  // Items the last match unlocked, shown on the results screen (set by main.js when a match ends).
+  renderUnlocks() {
+    const box = this.screens.results.querySelector('.unlocks');
+    const list = this.newUnlocks || [];
+    this.newUnlocks = [];
+    box.hidden = !list.length;
+    if (!list.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="unlocks-h">New in your locker</div><div class="unlocks-list">${list.map(({ slot, item }) =>
+      `<span class="unlock" style="--rc:${RARITY[item.rarity].color}"><b>${esc(item.label)}</b> ${esc(SLOT_LABELS[slot].toLowerCase())}</span>`).join('')}</div>
+      <button class="nav link" data-act="to-locker">Try it on in the locker room</button>`;
   }
 }
 

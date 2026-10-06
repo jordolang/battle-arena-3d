@@ -7,10 +7,12 @@ import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
 import { initAudio } from './audio.js';
-import { NetSession, cleanCode } from './net/session.js';
+import { NetSession, cleanCode, saveOnlineSettings } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
 import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
+import { CharacterSelect } from './charSelect.js';
+import { wardrobe } from './cosmetics.js';
 import { Account } from './account.js';
 import { AccountMenus } from './account-ui.js';
 import { Training } from './training.js';
@@ -75,6 +77,7 @@ function boot() {
     },
     onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
   });
+  menus.select = new CharacterSelect({ menus });
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
   training = new Training({ game, menus, bindings, keyboard, events });
@@ -186,7 +189,19 @@ function boot() {
   account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
   account.refresh();
 
+  // Your match counts toward unlocking outfits: P1 on this keyboard, or your own fighter online.
+  const recordMatch = (champ, fighters) => {
+    const me = game.online ? game.localFighter
+      : fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0];
+    if (!me || game.mode !== 'match' || training.active) return []; // practice doesn't count
+    const won = champ === me || (champ && champ.team >= 0 && champ.team === me.team);
+    const fresh = wardrobe.recordMatch({ won, rounds: me.stats.wins, kos: me.stats.kos });
+    if (fresh.length && session.kind === 'tournament') game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    return fresh;
+  };
+
   game.onMatchEnd = (champ, fighters) => {
+    menus.newUnlocks = recordMatch(champ, fighters);
     // tournament matches go back to the bracket instead of the results screen
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
     menus.screens.results.querySelector('.acct-result').textContent = account.recording ? 'Saving to your profile…' : '';
@@ -251,7 +266,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account };
+  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, wardrobe, account };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

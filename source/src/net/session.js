@@ -4,6 +4,7 @@
 // the match from the host's snapshots, slightly in the past so motion stays smooth.
 // Visual effects, announcer lines and gameplay events are replayed on the same
 // timeline, so a client also hears every `events` emit the audio pass listens to.
+import { wardrobe, sanitizeLook, randomLook } from '../cosmetics.js';
 import { ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
 import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
@@ -13,7 +14,7 @@ import { createTransport, createBeacon, TransportError } from './transport.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 6;
+export const PROTOCOL = 7;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -60,6 +61,16 @@ export function randomCode() {
 export function cleanCode(s) {
   return String(s ?? '').toUpperCase().split('').filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, 5);
 }
+// Each player's saved looks by fighter id, as sent to the host: unknown fighters and items are dropped.
+// (Ownership is not checked here yet; player profiles will vouch for it later.)
+export function cleanLooks(map) {
+  const out = {};
+  if (map && typeof map === 'object') for (const def of ROSTER) if (map[def.id]) out[def.id] = sanitizeLook(map[def.id]);
+  return out;
+}
+// What a lobby member wears on the roster fighter `index`.
+const lookOf = (member, index) => sanitizeLook(member?.looks?.[ROSTER[index]?.id]);
+
 export function loadOnlineSettings() {
   try { return { name: '', fighter: -1, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return { name: '', fighter: -1 }; }
 }
@@ -174,7 +185,7 @@ export class NetSession {
     this.lobby = {
       code, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
     };
     if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
     if (admin) {
@@ -232,6 +243,7 @@ export class NetSession {
       case 'pick':
         if (member && Number.isInteger(msg.fighter) && msg.fighter >= -1 && msg.fighter < ROSTER.length) {
           member.fighter = msg.fighter;
+          if (msg.looks) member.looks = cleanLooks(msg.looks);
           this.broadcastLobby();
         }
         break;
@@ -272,7 +284,7 @@ export class NetSession {
     for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
     const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
     // reward: the cosmetic their fundraising group earned by reaching its goal (fundraiser.js)
-    this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
+    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
     if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
     this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
     if (tourney) {
@@ -414,8 +426,8 @@ export class NetSession {
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const fighters = [];
     [pa, pb].forEach((list, side) => {
-      for (const mem of list) fighters.push({ def: pick(mem.fighter), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side, reward: mem.reward || 0 });
-      for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), pname: null, color: null, owner: null, team: side });
+      for (const mem of list) { const def = pick(mem.fighter); fighters.push({ def, look: lookOf(mem, def), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side, reward: mem.reward || 0 }); }
+      for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), look: randomLook(), pname: null, color: null, owner: null, team: side });
     });
     t.current = { r: m.r, i: m.i, a: m.a, b: m.b };
     const label = `${roundName(t.bracket, m.r)} · ${t.names[m.a]} vs ${t.names[m.b]}`;
@@ -531,15 +543,23 @@ export class NetSession {
   pickFighter(d) {
     const n = ROSTER.length;
     const cur = this.settings.fighter;
-    this.settings.fighter = ((cur + 1 + d + n + 1) % (n + 1)) - 1; // -1 = random
+    this.setFighter(((cur + 1 + d + n + 1) % (n + 1)) - 1); // -1 = random
+  }
+
+  // Your fighter (roster index, -1 = random) and your looks from the wardrobe, sent to the room.
+  // Also called after the wardrobe changes, so the room sees a new outfit at once.
+  setFighter(index) {
+    this.settings.fighter = index;
     saveOnlineSettings(this.settings);
+    const looks = wardrobe.allLooks();
     if (this.isHost) {
-      this.lobby.members[0].fighter = this.settings.fighter;
+      this.lobby.members[0].fighter = index;
+      this.lobby.members[0].looks = looks;
       this.broadcastLobby();
     } else if (this.role === 'client') {
       const me = this.lobby?.members.find((m) => m.id === this.myId);
-      if (me) me.fighter = this.settings.fighter;
-      this.transport.sendHost({ t: 'pick', fighter: this.settings.fighter });
+      if (me) { me.fighter = index; me.looks = looks; }
+      this.transport.sendHost({ t: 'pick', fighter: index, looks });
       this.onLobby();
     }
   }
@@ -551,9 +571,9 @@ export class NetSession {
     const count = Math.max(rules.count, members.length, 2);
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const tc = rules.teams || 0;
-    const fighters = members.map((m) => ({ def: pick(m.fighter), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1, reward: m.reward || 0 }));
+    const fighters = members.map((m) => { const def = pick(m.fighter); return { def, look: lookOf(m, def), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1, reward: m.reward || 0 }; });
     while (fighters.length < count) {
-      const cpu = { def: pick(-1), pname: null, color: null, owner: null, team: -1 };
+      const cpu = { def: pick(-1), look: randomLook(), pname: null, color: null, owner: null, team: -1 };
       if (tc) {
         const sizes = Array(tc).fill(0);
         for (const f of fighters) sizes[f.team]++;
@@ -672,7 +692,7 @@ export class NetSession {
     transport.onMessage = (id, msg) => this.clientReceive(msg);
     transport.onHostLost = () => this.leave('Lost the connection to the host.');
     this.chat = [];
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
     this.hostHeard = performance.now();
     let lastTick = performance.now();
     this.pingTimer = setInterval(() => {

@@ -40,6 +40,8 @@ export function fundraiserCode(taken = []) {
 }
 // "jm 7kq4 x2pd", "JM7KQ4X2PD" and "JM-7KQ4-X2PD" are the same code
 export function normFundraiserCode(s) { return String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^(?!JM)(?=[A-Z0-9]{8}$)/, 'JM'); }
+// true when what a player typed has the shape of a fundraiser code
+export function isFundraiserCode(s) { return /^JM[A-Z0-9]{8}$/.test(normFundraiserCode(s)); }
 // the registered group for what a player typed, or null
 export function findFundraiser(groups, typed) {
   const k = normFundraiserCode(typed);

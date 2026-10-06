@@ -10,9 +10,9 @@ import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
-import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, normFundraiserCode, verifyFundraiserCode } from './tournament.js';
+import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -101,6 +101,19 @@ function rgbToHex(c) {
   return '#' + m.slice(1, 4).map((x) => (+x).toString(16).padStart(2, '0')).join('');
 }
 
+// The group a fundraiser code made in the José Madrid Salsa admin panel belongs to, checked with the
+// site. Resolves to { name } or { why } (shown to the player); `notCode` explains text that is no code.
+export async function siteGroup(typed, notCode, tail) {
+  if (!isFundraiserCode(typed)) return { why: notCode };
+  try {
+    const name = await verifyFundraiserCode(typed);
+    if (name) return { name };
+    return { why: `That fundraiser code is not registered. Check it with your organizer.${tail}` };
+  } catch {
+    return { why: `The José Madrid Salsa site could not check your fundraiser code just now. Try again in a moment.${tail}` };
+  }
+}
+
 export class NetSession {
   constructor({ game, menus, keyboard, bindings }) {
     this.game = game;
@@ -112,6 +125,7 @@ export class NetSession {
     this.lobby = null;         // { code, rules, members, inMatch }
     this.myId = null;
     this.settings = loadOnlineSettings();
+    this.fundraiserCode = '';  // the code from the title screen, sent when joining an online battle
     this.onLobby = () => {};   // UI hooks, set by the online menus
     this.onMatchStart = () => {};
     this.onLeft = () => {};
@@ -196,10 +210,13 @@ export class NetSession {
         if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) { this.reject(id, 'That battle already started.'); return; }
         // in a tournament your fundraising group is your team; without one you can only watch.
         // When the admin requires fundraiser codes, fighters must bring one: it names their group.
+        // Online battles (rooms and the queue) are for enrolled groups only: the site checks the code.
         const group = cleanGroup(msg.group);
-        if (tourney && msg.role === 'player' && this.lobby.tournament.registration === 'code') {
+        const check = !tourney ? siteGroup(msg.fc, 'Online play needs your fundraising group\'s code. Type the code your organizer gave you on the title screen.', '')
+          : msg.role === 'player' && this.lobby.tournament.registration === 'code' ? this.registeredGroup(group) : null;
+        if (check) {
           this.pending.add(id);
-          this.registeredGroup(group).then((reg) => {
+          check.then((reg) => {
             if (!this.pending.delete(id) || !this.lobby || this.lobby.members.some((m) => m.id === id)) return;
             if (reg.name) { this.admit(id, msg, cleanGroup(reg.name)); return; }
             this.reject(id, reg.why);
@@ -260,18 +277,7 @@ export class NetSession {
   async registeredGroup(typed) {
     const local = findFundraiser(this.fundraisers, typed);
     if (local) return { name: local.name };
-    const codeLike = /^JM[A-Z0-9]{8}$/.test(normFundraiserCode(typed));
-    if (codeLike) {
-      try {
-        const remote = await verifyFundraiserCode(typed);
-        if (remote) return { name: remote };
-      } catch {
-        return { why: 'The José Madrid Salsa site could not check your fundraiser code just now. Try again in a moment, or join to watch.' };
-      }
-    }
-    return { why: !codeLike
-      ? 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.'
-      : 'That fundraiser code is not registered. Check it with your organizer, or join to watch.' };
+    return siteGroup(typed, 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.', ' Or join to watch.');
   }
 
   reject(id, reason) {
@@ -654,7 +660,7 @@ export class NetSession {
     transport.onMessage = (id, msg) => this.clientReceive(msg);
     transport.onHostLost = () => this.leave('Lost the connection to the host.');
     this.chat = [];
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group) });
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group), fc: this.fundraiserCode });
     this.hostHeard = performance.now();
     let lastTick = performance.now();
     this.pingTimer = setInterval(() => {

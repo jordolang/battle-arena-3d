@@ -68,8 +68,9 @@ export class Menus {
       saveSetup(this.setup);
       this.updateTeamLabels();
     });
-    // players must belong to a fundraising group: the name or code is asked for on the title screen
-    // and kept in this browser; nothing checks it against the fundraiser system yet
+    // players must belong to a fundraising group: its code is asked for on the title screen and kept in
+    // this browser. Online battles check it with the José Madrid Salsa site (see OnlineMenus.checkFundraiser);
+    // tournaments check it on the admin's side
     this.groupEl = document.getElementById('fr-group');
     this.groupErr = this.screens.title.querySelector('.fr-error');
     try { this.groupEl.value = localStorage.getItem(GROUP_KEY) || ''; } catch { /* ignore */ }
@@ -160,15 +161,20 @@ export class Menus {
   // true when a fundraising group has been entered; otherwise sends the player back to the field on the title
   requireGroup() {
     if (this.group) return true;
+    this.flagGroup('Type your fundraiser code in the box above first, then press the button again.');
+    return false;
+  }
+
+  // sends the player back to the fundraiser field on the title with `why` under it
+  flagGroup(why) {
     if (this.active !== 'title') this.show('title');
-    this.groupErr.textContent = 'Type your fundraising group in the box above first, then press the button again.';
+    this.groupErr.textContent = why;
     this.groupEl.classList.add('bad');
     // replay the shake so a second press is noticed too
     const box = this.groupEl.closest('.fundraiser');
     box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
     box.scrollIntoView({ block: 'center', behavior: 'smooth' });
     this.groupEl.focus({ preventScroll: true });
-    return false;
   }
 
   runAct(act, el) {

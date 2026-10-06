@@ -4,6 +4,7 @@ import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { shareOnFacebook } from '../share.js';
 import { ONLINE_COLORS, MAX_PLAYERS, cleanCode, cleanName, saveOnlineSettings } from './session.js';
+import { isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -92,8 +93,9 @@ export class OnlineMenus {
         if (act === 'net-requeue') this.menus.show('online');
         this.prepareName();
         this.busy = true;
-        this.setStatus('Looking for a battle…');
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus('Looking for a battle…');
           await s.queue();
           this.menus.show(s.game.online === 'client' ? null : 'lobby');
         } catch (err) {
@@ -111,8 +113,9 @@ export class OnlineMenus {
         if (this.busy) return;
         this.prepareName();
         this.busy = true;
-        this.setStatus('Opening a room…');
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus('Opening a room…');
           await s.host();
           this.menus.show('lobby');
         } catch (err) {
@@ -126,8 +129,9 @@ export class OnlineMenus {
         if (code.length !== 5) { this.setStatus('Type the 5-character room code from the host first.', true); this.codeInput.focus(); return; }
         this.prepareName();
         this.busy = true;
-        this.setStatus(`Joining room ${code}…`);
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus(`Joining room ${code}…`);
           await s.join(code);
           this.menus.show(s.game.online === 'client' ? null : 'lobby');
         } catch (err) {
@@ -159,6 +163,29 @@ export class OnlineMenus {
     s.settings.name = cleanName(this.nameInput.value);
     this.nameInput.value = s.settings.name;
     saveOnlineSettings(s.settings);
+  }
+
+  // Online battles are for enrolled fundraising groups: the José Madrid Salsa site checks the code
+  // typed on the title screen, so a code made in its admin panel works on any device. Resolves to
+  // the group's name, or null after telling the player why not. (The host checks everyone again.)
+  async checkFundraiser() {
+    const typed = this.menus.group;
+    this.session.fundraiserCode = typed;
+    if (!isFundraiserCode(typed)) {
+      this.setStatus('');
+      this.menus.flagGroup('Online play needs your group\'s fundraiser code (like JM-7KQ4-X2PD), not its name. Ask your organizer for it.');
+      return null;
+    }
+    this.setStatus('Checking your fundraiser code…');
+    try {
+      const name = await verifyFundraiserCode(typed);
+      if (name) return name;
+      this.setStatus('');
+      this.menus.flagGroup('That fundraiser code is not registered. Check it with your organizer.');
+    } catch {
+      this.setStatus('Could not reach the José Madrid Salsa site to check your fundraiser code. Check your connection and try again.', true);
+    }
+    return null;
   }
 
   inviteLink() {

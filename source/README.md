@@ -76,12 +76,13 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, host sync and client playback · `net/transport.js` PeerJS links · `net/online-ui.js` online screens
-- `events.js` event bus · `audio.js` empty hook for the sound pass · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
+- `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 
 ## Extension points for later passes
-- **Audio:** subscribe to `events` (`hit`, `block`, `guardBreak`, `ko`, `swing`, `specialStart`, `special`, `thunder`,
-  `spearPull`, `jump`, `land`, `wallHit`, `roundStart`, `fight`, `suddenDeath`, `roundEnd`, `matchEnd`, `skillStart`, `skill`,
-  `skillFail`, `dodge`, `dodgeFail`, `exhausted`, `shieldBreak`) inside `audio.js`.
+- **Audio:** built. `audio.js` listens to `events` and plays Higgsfield-generated clips (Mirelo effects, Sonilo music,
+  Inworld announcer) from four compressed files on Higgsfield's CDN: one effects sprite (offsets in `SPRITE`), a crowd
+  loop and two music loops, crossfaded so they loop without a seam. Sound unlocks on the first key or click; Music and
+  Sound effects volumes live in the fight setup. `window.__arena.audio.stats` shows what loaded and played.
 - **Online multiplayer:** built (see above). Every fighter is driven by a controller with `getIntent(fighter, world)`;
   remote players use `NetController` on the host. Online clients receive `events` too, with fighters resolved locally.
 - Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match.

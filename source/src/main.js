@@ -1,4 +1,4 @@
-// Entry point: wires keyboard, menus, game and the (future) audio layer.
+// Entry point: wires keyboard, menus, game and the audio layer.
 import { Keyboard, loadBindings } from './input.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
@@ -19,7 +19,7 @@ function boot() {
     keyboard,
     quality: params.get('quality') || 'auto',
   });
-  const audio = initAudio(events);
+  const audio = initAudio(events, { getCamera: () => game.rig.camera });
   let online = null;
   let session = null;
 
@@ -34,8 +34,9 @@ function boot() {
     },
     onResume: () => { menus.hideAll(); game.setPaused(false); },
     onRestart: () => { menus.hideAll(); game.setPaused(false); for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
-    onQuit: () => { game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
+    onQuit: () => { audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
+    onVolumeChange: (v) => audio.setVolumes(v),
     onAct: (act, el) => { audio.unlock(); online?.onAct(act, el); },
     onOpt: (key, el, d) => online?.onOpt(key, el, d),
     onShow: (name) => online?.onShow(name),
@@ -68,6 +69,11 @@ function boot() {
     }
   });
 
+  audio.setVolumes({ music: menus.setup.music / 100, sfx: menus.setup.sfx / 100 });
+  // browsers keep sound locked until the first key or click
+  const firstGesture = () => audio.unlock();
+  window.addEventListener('keydown', firstGesture, { once: true, capture: true });
+  window.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
   const initial = loadSetupQuality(menus);
   if (initial) setQuality(game, initial);
   game.startDemo();
@@ -87,7 +93,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session };
+  window.__arena = { game, menus, events, bindings, session, audio };
   if (params.has('autotest')) {
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));
     menus.setup.count = n;

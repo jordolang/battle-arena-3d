@@ -13,7 +13,7 @@ export function moveSummary(def) {
 
 export function defaultSetup() {
   return {
-    count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, quality: 'auto',
+    count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, quality: 'auto', music: 70, sfx: 90,
     teams: { count: 0, names: [...TEAM_DEFAULT_NAMES] },
     slots: Array.from({ length: 8 }, (_, i) => ({ control: i === 0 ? 0 : 'cpu', fighter: i % ROSTER.length, team: i % 4 })),
   };
@@ -38,11 +38,11 @@ const CONTROLS = [0, 1, 2, 3, 'cpu'];
 const QUALITY = ['auto', 'high', 'low'];
 
 export class Menus {
-  constructor({ keyboard, bindings, onStart, onResume, onRestart, onQuit, onQualityChange, onAct, onOpt, onShow }) {
+  constructor({ keyboard, bindings, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow }) {
     this.kb = keyboard;
     this.bindings = bindings;
     this.setup = loadSetup();
-    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onAct, onOpt, onShow };
+    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow };
     this.active = null;
     this.back = {};
     this.rebinding = null;
@@ -174,13 +174,15 @@ export class Menus {
     const s = this.setup;
     const key = el.dataset.opt, i = +el.dataset.i;
     const cyc = (arr, v) => arr[(arr.indexOf(v) + d + arr.length) % arr.length];
-    if (!['count', 'wins', 'diff', 'sudden', 'quality', 'control', 'fighter', 'teams', 'team'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
+    if (!['count', 'wins', 'diff', 'sudden', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
     switch (key) {
       case 'count': s.count = Math.min(8, Math.max(2, s.count + d)); break;
       case 'wins': s.winsNeeded = Math.min(5, Math.max(1, s.winsNeeded + d)); break;
       case 'diff': s.difficulty = cyc(DIFFS, s.difficulty); break;
       case 'sudden': s.suddenDeath = cyc(SUDDEN, s.suddenDeath); break;
       case 'quality': s.quality = cyc(QUALITY, s.quality); this.cb.onQualityChange?.(s.quality); break;
+      case 'music': s.music = Math.min(100, Math.max(0, s.music + d * 10)); this.cb.onVolumeChange?.({ music: s.music / 100 }); break;
+      case 'sfx': s.sfx = Math.min(100, Math.max(0, s.sfx + d * 10)); this.cb.onVolumeChange?.({ sfx: s.sfx / 100 }); break;
       case 'teams': s.teams.count = cyc(TEAM_COUNTS, s.teams.count); break;
       case 'team': { const n = s.teams.count || 2; s.slots[i].team = ((s.slots[i].team % n) + d + n) % n; break; }
       case 'control': {
@@ -218,6 +220,8 @@ export class Menus {
       opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
       opt('teams', 'Teams', s.teams.count ? `${s.teams.count} teams` : 'Free-for-all'),
       opt('quality', 'Graphics', { auto: 'Auto', high: 'High', low: 'Low' }[s.quality]),
+      opt('music', 'Music', s.music ? `${s.music}%` : 'Off'),
+      opt('sfx', 'Sound effects', s.sfx ? `${s.sfx}%` : 'Off'),
     ].join('');
     this.renderTeamNames();
     const tc = s.teams.count;

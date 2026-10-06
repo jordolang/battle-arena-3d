@@ -296,7 +296,7 @@ export class Game {
       if (this.teamMode) this.teamsAlive = new Set(this.fighters.map((f) => f.team));
       this.hud.announce(last ? `Round ${this.round} · Final` : `Round ${this.round}`, 'round', 1300);
       this.hud.setTimer('');
-      events.emit('roundStart', { round: this.round, fighters: this.fighters });
+      events.emit('roundStart', { round: this.round, final: last, fighters: this.fighters });
     }
     if (silent) { this.phase = 'fight'; this.locked = false; }
   }

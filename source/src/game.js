@@ -251,6 +251,7 @@ export class Game {
         : new HumanController(this.keyboard, bindings[s.control], s.control);
       const f = new Fighter(def, i, ctrl);
       if (ctrl.name) f.name = ctrl.name;
+      f.setReward(s.reward);
       return f;
     });
     this.applyTeams(setup.teams, setup.slots.map((s) => s.team));
@@ -314,6 +315,7 @@ export class Game {
       f.netName = s.pname || null;
       f.netColor = s.color || null;
       f.isYou = i === you;
+      f.setReward(s.reward);
       return f;
     });
     this.applyTeams(spec.setup.teams, spec.fighters.map((s) => s.team));

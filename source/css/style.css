@@ -167,7 +167,9 @@ kbd {
 }
 .fr-head { font-size: 14px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
 .fundraiser p { margin: 0; color: var(--bone); font-size: 16px; line-height: 1.35; }
-.fundraiser .fr-error { color: #ff8a6a; min-height: 0; }
+.fundraiser .fr-error { color: #ffb08a; min-height: 0; font-weight: 700; font-size: 17px; }
+.fundraiser.shake { animation: fr-shake 0.45s ease; border-color: #ff6a4a; }
+@keyframes fr-shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 .fundraiser .fr-error:empty { display: none; }
 .field input.bad { border-color: #ff6a4a; }
 .tagline { font-size: 19px; color: var(--ash); margin: 0; max-width: 34ch; line-height: 1.35; }

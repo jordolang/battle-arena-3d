@@ -13,6 +13,8 @@ import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
 import { CharacterSelect } from './charSelect.js';
 import { wardrobe } from './cosmetics.js';
+import { Account } from './account.js';
+import { AccountMenus } from './account-ui.js';
 import { Training } from './training.js';
 import { prompts, registerPromptDevice } from './prompts.js';
 import { padLabel } from './padmap.js';
@@ -39,6 +41,9 @@ function boot() {
   const audio = initAudio(events, { getCamera: () => game.rig.camera });
   let online = null;
   let session = null;
+  let accountUi = null;
+  // every player signs in with a José Madrid Salsa account; their matches go on their profile
+  const account = new Account(params);
   let training = null;
 
   const menus = new Menus({
@@ -64,15 +69,17 @@ function boot() {
       // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
       if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
       if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
-      online?.onAct(act, el);
+      if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
     },
-    onOpt: (key, el, d) => (key === 'tr-fighter' ? training.changeFighter(d) : online?.onOpt(key, el, d)),
-    onShow: (name) => { if (name === 'training') training.renderMenu(); online?.onShow(name); },
-    onSelect: (key) => online?.openSelect(key),
-    // the locker's "make this my fighter" also becomes your pick online
-    onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
+    onOpt: (key, el, d) => {
+      if (key === 'tr-fighter') return training.changeFighter(d);
+      if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
+    },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
   });
   menus.select = new CharacterSelect({ menus });
+  menus.account = account;
+  accountUi = new AccountMenus({ menus, account });
   training = new Training({ game, menus, bindings, keyboard, events });
   // ---- controllers and touch ----
   const touch = new TouchControls({
@@ -177,6 +184,10 @@ function boot() {
   const chat = new ChatPanel({ session, keyboard });
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
+  account.track({ events, game, session, onResult: (r) => accountUi.showResult(r) });
+  // online, your fighter name is your leaderboard name
+  account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
+  account.refresh();
 
   // Your match counts toward unlocking outfits: P1 on this keyboard, or your own fighter online.
   const recordMatch = (champ, fighters) => {
@@ -193,6 +204,7 @@ function boot() {
     menus.newUnlocks = recordMatch(champ, fighters);
     // tournament matches go back to the bracket instead of the results screen
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
+    menus.screens.results.querySelector('.acct-result').textContent = account.recording ? 'Saving to your profile…' : '';
     setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
   };
 
@@ -240,7 +252,7 @@ function boot() {
   // an invite link (?room=CODE) opens the join screen with the code filled in
   const room = cleanCode(params.get('room'));
   // (players without a fundraising group stay on the title until they enter one; the code waits in the join field)
-  if (room) { document.getElementById('net-code').value = room; if (menus.requireGroup()) menus.show('online'); }
+  if (room) { document.getElementById('net-code').value = room; if (account.ready && menus.requireGroup()) menus.show('online'); }
   // a tournament link (?t=CODE) opens the tournament screen with the code filled in
   const tcode = cleanCode(params.get('t'));
   if (tcode && !room) { document.getElementById('t-code').value = tcode; menus.show('tourney'); }
@@ -254,7 +266,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, wardrobe };
+  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, wardrobe, account };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

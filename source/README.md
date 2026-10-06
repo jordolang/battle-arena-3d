@@ -21,9 +21,13 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
 ## José Madrid Salsa fundraiser
 - The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
   a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).
-- Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's name or
+- Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's fundraiser
   code, and Fight online and fighting in a tournament stay locked until it is filled in (Fight versus the CPU and watching a tournament
-  do not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
+  do not need one). Admins make codes on the website at **Admin → Fundraisers → Battle Arena → Game codes**, so a code
+  works on any device.
+- **Online battles** (the queue and invite rooms) need a code the website confirms: the game checks it with
+  `POST https://www.josemadrid.net/api/arena/game-codes/verify` before queueing, and the host checks every player who
+  joins again, so a group name or a revoked code can't get in.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
 - **Donate to your team**: under the group field the title screen shows the group's fundraiser from the José Madrid
   Salsa fundraising site: how much it has raised toward its goal and a **Donate to (group)** button that opens the
@@ -68,7 +72,7 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   title screen can fight, and they join the team of the group the code belongs to; anyone can still watch. Codes come
   from two places: the José Madrid Salsa admin panel (website or desktop app), which the host checks with
   `POST https://www.josemadrid.net/api/arena/game-codes/verify`, or the **Fundraiser codes** list on the admin card
-  (type a group name, **Make code**; saved only in that browser). Set **Who can fight** to **Any group name** to skip
+  (type a group name, **Make code**; saved only in that browser and good for that tournament only). Set **Who can fight** to **Any group name** to skip
   codes. `?codes-api=URL` points the check at another server for testing.
 - **Teams**: enter your fundraiser code (or, if the admin made none, your group's name) on the title screen, open
   Tournament, type the tournament code and press **Fight for my group**. Pick your fighter in the lobby.

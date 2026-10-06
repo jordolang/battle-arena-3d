@@ -160,15 +160,19 @@ export class Menus {
   requireGroup() {
     if (this.group) return true;
     if (this.active !== 'title') this.show('title');
-    this.groupErr.textContent = 'Enter your fundraising group to join the fight.';
+    this.groupErr.textContent = 'Type your fundraising group in the box above first, then press the button again.';
     this.groupEl.classList.add('bad');
-    this.groupEl.focus();
+    // replay the shake so a second press is noticed too
+    const box = this.groupEl.closest('.fundraiser');
+    box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    this.groupEl.focus({ preventScroll: true });
     return false;
   }
 
   runAct(act, el) {
     const gated = act === 'net-host' || act === 'net-join' || act === 'net-queue' || act === 't-join-fight' ||
-      ((act === 'to-setup' || act === 'to-online') && this.active === 'title');
+      (act === 'to-online' && this.active === 'title');
     if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;

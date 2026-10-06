@@ -20,8 +20,8 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
 - The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
   a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).
 - Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's name or
-  code, and Fight / Fight online / fighting in a tournament stay locked until it is filled in (watching a tournament
-  does not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
+  code, and Fight online and fighting in a tournament stay locked until it is filled in (Fight versus the CPU and watching a tournament
+  do not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
 
 ## Fight online: the 30-second queue

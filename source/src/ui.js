@@ -33,7 +33,7 @@ export function loadSetup() {
     return { ...d, ...s, teams, slots: d.slots.map((slot, i) => ({ ...slot, ...(s.slots?.[i] || {}) })) };
   } catch { return d; }
 }
-function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
+export function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 
 const SUDDEN = [0, 45, 60, 75, 90, 120];
 const DIFFS = Object.keys(DIFFICULTY);
@@ -240,6 +240,7 @@ export class Menus {
     if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
+      case 'to-training': this.show('training'); break;
       case 'to-title': this.show('title'); break;
       case 'to-controls': this.controlsReturn = this.active; this.show('controls'); break;
       case 'controls-back': this.show(this.controlsReturn || 'title'); break;

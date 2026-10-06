@@ -526,3 +526,43 @@ button { font: inherit; color: inherit; }
 .belt-toast span { font-size: 13px; color: var(--bone); }
 #belts.compact .belt-toast b { font-size: 18px; }
 @media (max-width: 720px) { .belt { --orb: 60px; --slot: 38px; } .belt-keys { display: none; } }
+
+/* ---------- Training: tutorial coach and practice room ---------- */
+#coach {
+  position: absolute; left: 16px; top: 118px; width: min(360px, calc(100% - 32px)); padding: 10px 14px 12px;
+  background: linear-gradient(180deg, rgba(14, 10, 12, 0.88), rgba(14, 10, 12, 0.72)); border: 1px solid var(--plate-edge);
+  border-left: 3px solid var(--gold); border-radius: 3px; pointer-events: auto; text-shadow: 0 1px 2px #000;
+  transition: border-color 0.3s;
+}
+#coach.done { border-left-color: #7dff6b; }
+.coach-head { display: flex; align-items: baseline; gap: 10px; }
+.coach-n { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); }
+.coach-title { font-family: var(--display); font-size: 26px; line-height: 1.05; color: var(--gold); }
+.coach-text { margin: 6px 0 8px; font-size: 16px; line-height: 1.35; color: var(--bone); }
+.coach-text kbd, .coach-btn kbd { white-space: nowrap; }
+kbd.pr-gamepad { border-radius: 10px; padding: 0 0.5em; }
+kbd.pr-touch { border-radius: 999px; padding: 0 0.55em; background: rgba(255, 200, 97, 0.18); border-color: rgba(255, 200, 97, 0.5); }
+.coach-prog { display: flex; align-items: center; gap: 10px; }
+.coach-bar { flex: 1; height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; }
+.coach-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--ember), var(--gold)); transform-origin: left; transform: scaleX(0); transition: transform 0.2s; }
+#coach.done .coach-bar i { background: #7dff6b; }
+.coach-count { min-width: 3.4em; text-align: right; font-weight: 700; font-size: 14px; color: var(--ash); }
+#coach.done .coach-count { color: #7dff6b; }
+.coach-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.coach-btn {
+  font: 600 13px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone); cursor: pointer;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(239, 228, 210, 0.22); border-radius: 3px; padding: 4px 9px; min-height: 30px;
+}
+.coach-btn:hover { border-color: var(--gold); color: var(--gold); }
+.coach-btn kbd { margin-right: 6px; }
+.coach-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.coach-stats div { display: flex; flex-direction: column; align-items: center; padding: 4px 2px; background: rgba(0, 0, 0, 0.3); border-radius: 2px; }
+.coach-stats b { font-family: var(--display); font-size: 26px; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; }
+.coach-stats span { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ash); text-align: center; }
+#screen-training .tr-fighter { width: 100%; margin: 4px 0 2px; }
+#screen-training .tr-desc { margin: 0 0 12px; }
+@media (max-width: 700px) {
+  #coach { top: 76px; left: 8px; width: calc(100% - 16px); padding: 8px 10px 10px; }
+  .coach-title { font-size: 21px; }
+  .coach-text { font-size: 14px; }
+}

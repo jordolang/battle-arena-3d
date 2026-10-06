@@ -59,6 +59,7 @@
         <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
+        <button class="nav big" data-act="to-training">Training <small>tutorial and practice room</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
       </div>
       <div class="share-row">
@@ -122,6 +123,35 @@
       <div class="actions">
         <button class="nav big" data-act="reset-keys">Reset to defaults</button>
         <button class="nav big" data-act="controls-back">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-training" data-back="to-title" hidden>
+    <div class="plate" style="width:min(560px,100%)">
+      <div class="eyebrow">Training</div>
+      <h2>Learn to fight</h2>
+      <p class="sub">The tutorial walks you through every move, block, skill and piece of gear against a training dummy, one lesson at a time. The practice room lets you try anything you like on the same dummy.</p>
+      <button class="nav opt row tr-fighter" data-opt="tr-fighter"></button>
+      <p class="setup-note tr-desc"></p>
+      <div class="menu-list">
+        <button class="nav big primary" data-act="tr-tutorial">Guided tutorial <small>14 short lessons</small></button>
+        <button class="nav big" data-act="tr-practice">Practice room <small>free training with the dummy</small></button>
+        <button class="nav big" data-act="to-title">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-trained" data-back="quit" hidden>
+    <div class="plate" style="width:min(500px,100%)">
+      <div class="eyebrow">Tutorial complete</div>
+      <h2>Ready for the arena</h2>
+      <p class="sub">You know every move now. Keep sharpening it in the practice room, or take on the CPU.</p>
+      <div class="menu-list">
+        <button class="nav big primary" data-act="tr-fight">Fight the CPU</button>
+        <button class="nav big" data-act="tr-practice">Practice room</button>
+        <button class="nav big" data-act="tr-tutorial">Replay the tutorial</button>
+        <button class="nav big" data-act="quit">Title screen</button>
       </div>
     </div>
   </section>

@@ -388,3 +388,29 @@ export class AIController {
     return false;
   }
 }
+
+// The training dummy. 'idle' stands still facing wherever it was left (walk behind it for a backstab),
+// 'block' turns to face you and holds its guard, 'attack' walks up and throws one slow punch at a time
+// so there is a clear rhythm to block and parry against.
+export const DUMMY_MODES = ['idle', 'block', 'attack'];
+export class DummyController {
+  constructor() {
+    this.isHuman = false;
+    this.label = 'Dummy';
+    this.name = 'Training Dummy';
+    this.mode = 'idle';
+    this.nextSwing = 0;
+  }
+  getIntent(me, world) {
+    const it = { mx: 0, mz: 0, block: false };
+    if (this.mode === 'idle') return it;
+    const foe = world.fighters.find((f) => f !== me && f.alive);
+    if (!foe) return it;
+    const dx = foe.pos.x - me.pos.x, dz = foe.pos.z - me.pos.z, d = Math.hypot(dx, dz);
+    if (me.state === 'idle' || me.state === 'block') me.facing = Math.atan2(dx, dz);
+    if (this.mode === 'block') { it.block = true; return it; }
+    if (d > 1.9) { it.mx = (dx / d) * 0.55; it.mz = (dz / d) * 0.55; this.nextSwing = Math.max(this.nextSwing, world.time + 0.5); }
+    else if (world.time >= this.nextSwing) { it.punch = true; this.nextSwing = world.time + 1.6; }
+    return it;
+  }
+}

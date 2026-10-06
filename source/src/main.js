@@ -1,5 +1,7 @@
 // Entry point: wires keyboard, menus, game and the audio layer.
-import { Keyboard, loadBindings } from './input.js';
+import { Keyboard, loadBindings, devices } from './input.js';
+import { Gamepads } from './gamepad.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
@@ -13,6 +15,13 @@ import { ChatPanel } from './net/chat.js';
 function boot() {
   const keyboard = new Keyboard();
   const bindings = loadBindings();
+  keyboard.bindings = bindings;
+  const pads = new Gamepads();
+  devices.pads = pads;
+  // phones and tablets start out showing touch prompts; a key or pad press switches them over
+  if (isTouchDevice() && matchMedia('(pointer: coarse)').matches) devices.last = devices.kind[0] = 'touch';
+  for (let p = 0; p < 4; p++) if (pads.slotsFor(p).length) devices.kind[p] = 'pad';
+  document.body.dataset.input = devices.last;
   let lastSetup = null;
 
   const params = new URLSearchParams(location.search);
@@ -41,10 +50,87 @@ function boot() {
     onQuit: () => { audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
     onVolumeChange: (v) => audio.setVolumes(v),
+    onTouchChange: (s) => applyTouch(s),
+    pads,
     onAct: (act, el) => { audio.unlock(); online?.onAct(act, el); },
     onOpt: (key, el, d) => online?.onOpt(key, el, d),
     onShow: (name) => online?.onShow(name),
   });
+  // ---- controllers and touch ----
+  const touch = new TouchControls({
+    onPause: () => keyboard.dispatch('Escape'),
+    onUsed: () => devices.used('touch', 0),
+    getFighter: () => (game.online ? game.localFighter : game.fighters.find((f) => f.isHuman && f.controller?.playerIndex === 0)) || null,
+  });
+  devices.touch = touch;
+  const applyTouch = (s) => { touch.setSize(s.touchSize || 1); touch.vibrate = pads.rumbleOn; };
+  applyTouch(menus.setup);
+  const toastEl = document.createElement('div');
+  toastEl.id = 'pad-toast';
+  document.body.appendChild(toastEl);
+  let toastTimer = 0;
+  const toast = (html) => {
+    toastEl.innerHTML = html;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2600);
+  };
+  pads.menuMode = () => {
+    if (menus.active) return menus.active === 'pause' || menus.active === 'netpause' ? 'pause' : 'menu';
+    if (game.mode === 'match') return game.online && !game.localFighter ? 'spectate' : 'game';
+    return 'menu';
+  };
+  // pads send menu keys through the keyboard listeners, except while a keyboard key is being rebound
+  pads.emitKey = (code) => { if (!menus.rebinding) keyboard.dispatch(code); };
+  pads.onUse = (slot) => devices.used('pad', pads.seatOf(slot));
+  pads.onChange = ({ slot, on }) => {
+    if (on) {
+      const st = pads.state(slot);
+      toast(`<b>${st.name}</b> connected · plays as P${pads.seatOf(slot) + 1}`);
+      devices.used('pad', pads.seatOf(slot));
+      pads.rumble(slot, 0.4, 0.5, 180);
+    } else {
+      toast(`Controller ${slot + 1} disconnected`);
+      // a fighter whose controller drops mid-fight gets the pause screen instead of standing there
+      if (game.mode === 'match' && !game.online && !menus.active && game.phase === 'fight' &&
+        game.fighters.some((f) => f.isHuman && f.controller.playerIndex === pads.seatOf(slot))) {
+        game.setPaused(true);
+        menus.show('pause');
+      }
+    }
+    menus.padsChanged();
+  };
+  devices.listeners.add(() => {
+    document.body.dataset.input = devices.last;
+    game.inputChanged();
+  });
+  // shake the controller of whoever gets hit, harder for heavy blows and knockouts
+  const padsOf = (f) => {
+    if (!f) return [];
+    if (game.online) return f === game.localFighter ? [0, 1, 2, 3].filter((i) => pads.state(i)) : [];
+    return f.isHuman && f.controller?.playerIndex !== undefined ? pads.slotsFor(f.controller.playerIndex) : [];
+  };
+  const buzz = (f, strong, weak, ms) => {
+    for (const s of padsOf(f)) pads.rumble(s, strong, weak, ms);
+    if (touch.visible && touch.vibrate && f && f === touch.getFighter() && strong > 0.3) navigator.vibrate?.(Math.min(ms, 120));
+  };
+  events.on('hit', (d) => { buzz(d.fighter, d.heavy ? 0.85 : 0.35, d.heavy ? 0.6 : 0.4, d.heavy ? 230 : 110); buzz(d.by, 0, d.heavy ? 0.35 : 0.18, 60); });
+  events.on('block', (d) => buzz(d.fighter, 0.12, 0.3, 70));
+  events.on('parry', (d) => buzz(d.fighter, 0, 0.7, 90));
+  events.on('guardBreak', (d) => buzz(d.fighter, 0.7, 0.5, 260));
+  events.on('ko', (d) => { buzz(d.fighter, 1, 1, 480); buzz(d.by, 0.3, 0.5, 160); });
+  events.on('fight', () => { for (const f of game.fighters) buzz(f, 0.25, 0.25, 120); });
+  // the overlay shows during a fight on touch screens (or always, when switched on in Controls)
+  const touchLoop = () => {
+    const mode = menus.setup.touch || 'auto';
+    const wanted = mode === 'on' || (mode === 'auto' && devices.last === 'touch');
+    const me = touch.getFighter();
+    const fighting = game.mode === 'match' && !menus.active && game.phase !== 'matchOver' && !!me;
+    touch.setVisible(wanted && fighting, { spectating: !!me && !me.alive, ff: !game.online });
+    requestAnimationFrame(touchLoop);
+  };
+  requestAnimationFrame(touchLoop);
+
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
@@ -117,7 +203,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio };
+  window.__arena = { game, menus, events, bindings, session, audio, pads, touch, devices, keyboard };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

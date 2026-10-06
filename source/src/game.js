@@ -9,7 +9,7 @@ import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
 import { CameraRig } from './camera.js';
 import { AIController } from './ai.js';
-import { HumanController } from './input.js';
+import { HumanController, devices } from './input.js';
 import { Hud } from './hud.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -256,14 +256,10 @@ export class Game {
     this.tintDuplicates();
     for (const f of this.fighters) this.scene.add(f.model.root);
     this.round = 0;
-    this.hud.build(this.fighters, setup.winsNeeded, this.teams, (f, a) => bindings[f.controller.playerIndex]?.[a]);
+    this.buildHud();
     this.hud.show(true);
-    const humans = this.fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex);
-    this.hud.setHints(humans.flatMap((f) => {
-      const b = bindings[f.controller.playerIndex];
-      return [Hud.controlHint(f.controller.playerIndex, b), Hud.skillHint(f, b, `P${f.controller.playerIndex + 1}`)];
-    }));
     this.hintUntil = 12;
+    const humans = this.fighters.filter((f) => f.isHuman);
     this.rig.follow = humans.length === 1 && this.arena.radius > 20 ? humans[0] : null;
     this.beginRound(false);
   }
@@ -321,9 +317,9 @@ export class Game {
     this.localFighter = this.fighters[you] || null;
     this.rig.follow = this.arena.radius > 20 ? this.localFighter : null;
     this.round = 0;
-    this.hud.build(this.fighters, spec.setup.winsNeeded, this.teams, (f, a) => bindings[0]?.[a]);
+    this.watchHint = spec.watchHint;
+    this.buildHud();
     this.hud.show(true);
-    this.hud.setHints(you >= 0 ? [Hud.onlineHint(bindings), Hud.skillHint(this.localFighter, bindings[0], 'You')] : [spec.watchHint || 'You are watching this match. You join the next one.']);
     this.hintUntil = 12;
     if (role === 'host') this.beginRound(false);
     else {
@@ -335,7 +331,40 @@ export class Game {
     }
   }
 
+  // Cards, item bars and the opening hints, labelled for the keys, controller or touch
+  // screen each player is using. Rebuilt between rounds when someone switches device.
+  buildHud() {
+    const b = this.bindings, show = (p) => devices.display(p, b[p]);
+    this.hudDevices = devices.kind.join();
+    this.hud.build(this.fighters, this.setup.winsNeeded, this.teams,
+      this.online ? (f, a) => show(0)?.[a] : (f, a) => show(f.controller.playerIndex)?.[a]);
+    this.hud.setHints(this.openingHints());
+  }
+
+  openingHints() {
+    const b = this.bindings;
+    if (this.online) {
+      if (!this.localFighter) return [this.watchHint || 'You are watching this match. You join the next one.'];
+      if (devices.kind[0] === 'touch') return [];
+      return [Hud.onlineHint([devices.display(0, b[0]), b[1]]), Hud.skillHint(this.localFighter, devices.display(0, b[0]), 'You')];
+    }
+    const humans = this.fighters.filter((f) => f.isHuman).sort((x, y) => x.controller.playerIndex - y.controller.playerIndex);
+    return humans.flatMap((f) => {
+      const p = f.controller.playerIndex;
+      if (devices.kind[p] === 'touch') return [];
+      const d = devices.display(p, b[p]);
+      return [Hud.controlHint(p, d), Hud.skillHint(f, d, `P${p + 1}`)];
+    });
+  }
+
+  // Someone picked up a controller or touched the screen: fix the hints now, the labels at the next round.
+  inputChanged() {
+    if (this.mode !== 'match' || !this.fighters.length) return;
+    if (this.hintUntil > 0) this.hud.setHints(this.openingHints());
+  }
+
   beginRound(silent) {
+    if (this.mode === 'match' && this.round > 0 && this.hudDevices !== devices.kind.join()) this.buildHud();
     this.round++;
     this.phase = 'intro';
     this.phaseTime = 0;
@@ -559,7 +588,8 @@ export class Game {
         if (this.slowmo > 0) { this.slowmo -= dt; this.timeScale = this.slowmo > 0 ? 0.3 : 1; }
         const humansAlive = this.fighters.some((f) => f.isHuman && f.alive);
         const anyHuman = this.fighters.some((f) => f.isHuman);
-        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive && this.keyboard.isDown('KeyX');
+        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive &&
+          (this.keyboard.isDown('KeyX') || !!devices.touch?.isDown('ff') || !!devices.pads?.anyDown('b0'));
         const scale = this.timeScale * (ff ? 3 : 1) * this.debugSpeed;
         this.acc += dt * scale;
         let steps = 0;
@@ -595,7 +625,7 @@ export class Game {
       } else this.hud.setTimer('');
     }
     this.hintUntil -= dt;
-    if (spectating && this.phase === 'fight') this.hud.setHints([this.online ? 'You are out. Watch who takes the round.' : 'You are out. Hold <kbd>X</kbd> to fast-forward.']);
+    if (spectating && this.phase === 'fight') this.hud.setHints([this.online ? 'You are out. Watch who takes the round.' : `You are out. ${devices.last === 'touch' ? 'Hold the button' : devices.last === 'pad' ? 'Hold <kbd class="pad f0">A</kbd>' : 'Hold <kbd>X</kbd>'} to fast-forward.`]);
     else if (this.hintUntil <= 0 && this.hintUntil > -1) { this.hud.setHints([]); this.hintUntil = -2; }
     this.hud.update(dt, this.rig.camera, this.width, this.height);
   }

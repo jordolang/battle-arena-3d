@@ -1,5 +1,6 @@
 // Shared constants, the fighter roster, move data and default key bindings.
 
+import { padLabel } from './padmap.js';
 export const SIM_HZ = 120;
 export const SIM_DT = 1 / SIM_HZ;
 
@@ -275,6 +276,7 @@ export const DIFFICULTY = {
 
 export function keyLabel(code) {
   if (!code) return '—';
+  if (code.startsWith('Pad:')) { const [, c, fam] = code.split(':'); return padLabel(c, fam); }
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   if (code === 'NumpadDecimal') return 'Num .';

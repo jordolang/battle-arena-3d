@@ -11,6 +11,42 @@ export const ARENA = {
   pillarSize: 0.85,    // collision radius of a pillar
 };
 
+// Game modes. Fight is a quick match against the CPU, Fight online is the 30-second public queue,
+// Tournament is team-against-team on the Badlands with friendly fire and revives.
+// durability multiplies every fighter's health so fights last longer and team tactics matter.
+export const MODES = {
+  cpu:        { label: 'Versus CPU', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
+  queue:      { label: 'Online brawl', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
+  tournament: { label: 'Tournament', map: 'badlands', durability: 2.6, powerups: true, friendlyFire: true, revive: true },
+};
+export function modeRules(mode) { return { mode, ...(MODES[mode] || MODES.cpu) }; }
+
+// Team tactics and the wider move set.
+//   backstab  hits landing from behind deal extra damage, cannot be blocked and always stagger
+//   parry     a block raised just before a melee hit stops it dead and staggers the attacker
+//   formation fighters standing near a living teammate take less damage
+//   revive    (tournament) a downed fighter can be pulled back up by a teammate standing over them
+export const COMBAT = {
+  backstabMult: 1.6, backstabDot: -0.3,
+  parryWindow: 0.18, parryStagger: 0.75,
+  formationRange: 5, formationGuard: 0.85,
+  downedTime: 12, reviveRange: 1.9, reviveTime: 2.4, reviveHp: 0.35,
+  friendlyFireMult: 0.6,
+};
+
+// Power-ups float above pads on the arena floor; walk through one to take it.
+// share is the chance weight when a pad picks what to spawn next.
+export const POWERUPS = {
+  heal:   { label: 'Health', color: 0x5dff7a, share: 3, hint: 'Restores 40% health over two seconds' },
+  shield: { label: 'Shield', color: 0x6fc8ff, share: 2, hint: 'A barrier that soaks 35% health worth of damage' },
+  rage:   { label: 'Rage', color: 0xff4a2a, share: 2, hint: '+30% damage for 10 seconds' },
+  haste:  { label: 'Haste', color: 0xc6ff4a, share: 2, hint: 'Faster movement and stamina for 10 seconds' },
+  mana:   { label: 'Mana', color: 0x4a7aff, share: 2, hint: 'Fills the blue bar' },
+  cloak:  { label: 'Cloak', color: 0xb070ff, share: 1, hint: 'Invisible for 5 seconds: sneak behind a foe' },
+  vamp:   { label: 'Vampire', color: 0xd01a4a, share: 1, hint: 'Your hits heal you for 10 seconds' },
+};
+export const POWERUP_IDS = Object.keys(POWERUPS);
+
 export const GRAVITY = 26;
 export const ENERGY_MAX = 100;
 export const SPECIAL_COST = 50;

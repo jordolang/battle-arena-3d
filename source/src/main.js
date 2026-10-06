@@ -1,11 +1,14 @@
 // Entry point: wires keyboard, menus, game and the audio layer.
 import { Keyboard, loadBindings } from './input.js';
+import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
 import { initAudio } from './audio.js';
 import { NetSession, cleanCode } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
+import { TournamentMenus } from './net/tourney-ui.js';
+import { ChatPanel } from './net/chat.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -27,6 +30,7 @@ function boot() {
     keyboard, bindings,
     onStart: (setup) => {
       lastSetup = setup;
+      online?.localMatch();
       audio.unlock();
       menus.hideAll();
       game.setPaused(false);
@@ -43,15 +47,29 @@ function boot() {
   });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
+  const chat = new ChatPanel({ session, keyboard });
+  online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
 
   game.onMatchEnd = (champ, fighters) => {
+    // tournament matches go back to the bracket instead of the results screen
+    if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
     setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
   };
 
   // pause with Escape or P during a match
   keyboard.onKey((e) => {
     if (game.mode !== 'match' || menus.active) return false;
+    // watching an online match: arrows pick whom the camera follows, up shows the whole field
+    if (game.online && !game.localFighter && /^Arrow/.test(e.code)) {
+      const alive = game.fighters.filter((f) => f.alive);
+      if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || !alive.length) game.rig.follow = null;
+      else {
+        const i = alive.indexOf(game.rig.follow);
+        game.rig.follow = alive[(i + (e.code === 'ArrowRight' ? 1 : -1) + alive.length + (i < 0 ? 1 : 0)) % alive.length];
+      }
+      return true;
+    }
     if (e.code === 'Escape' || e.code === 'KeyP') {
       if (game.phase === 'matchOver') return false;
       if (game.online) { menus.show('netpause'); return true; } // online matches keep running
@@ -84,6 +102,9 @@ function boot() {
   const room = cleanCode(params.get('room'));
   // (players without a fundraising group stay on the title until they enter one; the code waits in the join field)
   if (room) { document.getElementById('net-code').value = room; if (menus.requireGroup()) menus.show('online'); }
+  // a tournament link (?t=CODE) opens the tournament screen with the code filled in
+  const tcode = cleanCode(params.get('t'));
+  if (tcode && !room) { document.getElementById('t-code').value = tcode; menus.show('tourney'); }
 
   // when embedded in a frame the page needs a click before it hears keys
   const note = document.getElementById('focus-note');
@@ -96,12 +117,14 @@ function boot() {
   // test and debugging hooks
   window.__arena = { game, menus, events, bindings, session, audio };
   if (params.has('autotest')) {
+    // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));
-    menus.setup.count = n;
-    menus.setup.slots.forEach((s) => { s.control = 'cpu'; });
-    menus.setup.winsNeeded = +params.get('wins') || 1;
-    menus.setup.suddenDeath = +params.get('sd') || 30;
-    menus.runAct('start');
+    const tc = Math.max(0, Math.min(4, +params.get('teams') || 0));
+    menus.cb.onStart({
+      mode: params.get('mode') || 'cpu', winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
+      teams: { count: tc, names: TEAM_DEFAULT_NAMES.slice(0, tc) },
+      slots: Array.from({ length: n }, (_, i) => ({ control: 'cpu', fighter: i % ROSTER.length, team: tc ? i % tc : -1 })),
+    });
   }
 }
 
@@ -115,7 +138,7 @@ function setQuality(game, q) {
   game.renderer.setPixelRatio(game.pixelRatio);
   const shadows = q !== 'low';
   game.renderer.shadowMap.enabled = shadows;
-  game.arena.moon.castShadow = shadows;
+  for (const a of Object.values(game.arenas)) a.moon.castShadow = shadows;
   game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
   game.resize();
 }

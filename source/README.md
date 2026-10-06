@@ -1,7 +1,12 @@
 # Battle Arena 3D
 
-A 3D last-one-standing brawler in Three.js. 2 to 8 fighters, up to four people on one keyboard, CPU fighters fill the rest.
-Play free-for-all or in 2 to 4 named teams. Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
+A 3D last-one-standing brawler in Three.js with three ways to play:
+- **Fight**: you against 1 to 7 CPU fighters in the coliseum.
+- **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
+- **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
+
+Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
+Power-ups, backstabs, parries and (in tournaments) friendly fire and revives make positioning and teamwork matter.
 
 ## Play
 - **Easiest:** open `index.html` in the repo root in Chrome, Edge, Firefox or Safari. It is one self-contained file
@@ -15,15 +20,39 @@ Play free-for-all or in 2 to 4 named teams. Every fighter has stamina, three cas
 - The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
   a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).
 - Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's name or
-  code, and Fight / Fight online stay locked until it is filled in. The value is remembered in the browser only;
-  it is not yet checked against the fundraiser system.
+  code, and Fight / Fight online / fighting in a tournament stay locked until it is filled in (watching a tournament
+  does not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
+- In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
 
-## Online play (2 to 8 browsers)
-- Open `index.html` from the repo root (or a hosted copy of it) in each player's browser and choose **Fight online**.
-- One person picks **Host a room** and shares the 5-character code. Everyone else types it under **Join**.
-  On a hosted page the lobby also shows an invite link (`?room=CODE`) that opens the join screen with the code filled in.
-- In the room each player picks a fighter; the host sets fighters (2 to 8), rounds, CPU skill and sudden death, then starts.
-  CPU fighters fill empty seats, a player who leaves mid-match is replaced by a CPU, and late joiners watch and fight next match.
+## Fight online: the 30-second queue
+- Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
+  everyone who queues before it ends lands in the same battle (up to 8; it starts early when full). CPU fighters fill
+  a battle up to 4. While waiting you pick your fighter and can copy an invite link (`?room=CODE`) for friends.
+- After the battle everyone gets **Queue again**.
+- How the queue works without a server: the queue opener claims a well-known PeerJS name (`queue-v4`). Anyone else who
+  tries to claim it is told it is taken, asks its holder for the battle's room code, and joins that room. When the
+  countdown ends the opener lets the name go, so the next person to queue opens the next battle.
+
+## Tournaments
+- **Admin**: on the Tournament screen fill in the name, start time and prize, the fighters per team (1 to 4), rounds to
+  win a match and whether CPUs fill short teams. Share the tournament code (or the `?t=CODE` link) with the teams ahead
+  of time. The code is saved in the admin's browser, so the same code works on the day. At the agreed time press
+  **Open tournament room**, wait for the teams, **Draw the bracket**, then **Start** each match.
+- **Teams**: enter the fundraising group on the title screen, open Tournament, type the code and press **Fight for my
+  group**. Pick your fighter in the lobby.
+- **Viewers**: type the code and press **Watch**. While watching, the arrow keys pick which fighter the camera follows
+  and up shows the whole field.
+- **Chat**: press **T** in the lobby or during a match, Enter sends, Esc closes. The admin's messages are marked Admin,
+  and the admin can remove anyone from the room (the ✕ by their name).
+- Matches are team against team on the Badlands with friendly fire on (60% damage to teammates) and revives. The
+  winner advances; a team with nobody in the room forfeits. Odd team counts get byes. The champion and the prize are
+  announced in the lobby and the chat.
+- **Livestreaming**: the admin's screen is a spectator view of every match plus the chat, so streaming it with OBS or
+  any screen capture to YouTube or Twitch shows the whole tournament.
+- Everything runs in the admin's browser over PeerJS (no server): keep that tab open and visible for the whole event,
+  on a wired connection if possible. Up to 32 people (fighters and viewers) fit in one tournament room.
+
+## Online play details
 - Online, each player uses the P1 keys (or arrows with K/L/;/O/Enter). Esc opens a menu but never pauses the shared match.
 - Needs internet for the room code lookup (PeerJS's free public server); the match itself runs browser to browser over WebRTC.
   It cannot run inside the Claude Artifact preview, which blocks WebRTC: use the standalone file or a hosted copy.
@@ -32,8 +61,8 @@ Play free-for-all or in 2 to 4 named teams. Every fighter has stamina, three cas
 How it works (`src/net/`): the host runs the only simulation. Remote players send input (movement plus running tap counters,
 so a lost packet never drops a punch) and draw the match from 30 Hz snapshots, 100 ms behind the host for smooth interpolation.
 Effects, announcer lines, the kill feed and every gameplay event are replayed on clients at the matching moment, so
-`events` listeners (the audio pass) fire on every machine. `transport.js` wraps PeerJS; add `?net=local` to test with two tabs
-of one browser and no network, or `?peerserver=host:port` to use your own PeerJS server.
+`events` listeners (the audio pass) fire on every machine. `transport.js` wraps PeerJS; add `?net=local` to test with
+several tabs of one browser and no network, or `?peerserver=host:port` to use your own PeerJS server.
 
 ## Controls (rebindable in the Controls screen, saved in the browser)
 | | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 |
@@ -50,6 +79,26 @@ Combos: punch ×3 (ends in a hook), punch-punch-kick, kick-kick (knockdown round
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
 Sudden death (default 75 s) brings in a closing ring of fire.
 
+## Arenas, power-ups and tactics
+- **Coliseum** (Fight and Fight online): the moonlit arena with four pillars and four power-up pads.
+- **Badlands** (tournaments): a sunset canyon more than three times larger, with a walled base for each team, a ruined
+  shrine in the middle, boulders and broken walls to flank around, nine power-up pads and four healing springs.
+  On a map this big the camera follows your own fight.
+- **Power-ups**: walk through the floating gem. Health (40% over 2 s), Shield (soaks 35% of your health), Rage (+30%
+  damage, 10 s), Haste (10 s, full stamina), Mana (full blue bar), Cloak (invisible for 5 s, broken by attacking),
+  Vampire (hits heal you, 10 s). Pads refill 9 to 16 s after they are taken.
+- **Healing springs** (Badlands): stand in the glowing pool to recover 4% health a second.
+- **Backstab**: a melee hit (punch, kick, lunge, close-range skill, Shadow Step) landing on someone facing away deals
+  60% more damage, cannot be blocked and always staggers, even through armour.
+- **Parry**: start blocking in the last moment before a punch or kick lands to cancel it, stagger the attacker and
+  refill some guard and mana.
+- **Formation**: a fighter with a living teammate within 5 m takes 15% less damage.
+- **Durability**: everyone has 1.7x health in Fight and Fight online and 2.6x in tournaments.
+- **Tournament rules**: friendly fire is on (teammates take 60% damage from your hits, area skills included), and a
+  fighter knocked out goes down for 12 s. A teammate standing over them for 2.4 s revives them at 35% health. When a
+  whole team is down, the round is over. CPU fighters revive teammates, chase power-ups, retreat to springs when hurt,
+  circle behind busy enemies and hold off attacks that would catch a teammate.
+
 ## Stamina, skills and teams
 - **Stamina** (green bar): attacks, jumps, blocked hits, dodges and sprinting drain it; it refills after a short pause.
   At zero you are exhausted (slower, 28% weaker, no dodge or sprint, guard breaks faster) until it is back to 35.
@@ -57,10 +106,8 @@ Sudden death (default 75 s) brings in a closing ring of fire.
 - **Skills**: three per fighter, each unique and themed by class: Warriors strike up close, Ranged fighters shoot,
   Mages cast spells from a distance. Each is paid from the mana bar and then goes on cooldown.
   The chips under a player's card show each one; a dark fill is the cooldown, dim means not enough mana.
-- **Teams**: set *Teams* to 2, 3 or 4 in the rules, name the teams, and pick each slot's team. Fighters wear their
-  team's colours (dyed gi, pauldrons, tabard, floor ring). Teammates cannot hurt or target each other, and the last
-  team with anyone standing wins the round. Online, the host sets the team count and names and each player picks a team;
-  CPUs fill the smallest team.
+- **Teams** (tournaments): fighters wear their team's colours (dyed gi, pauldrons, tabard, floor ring) and the last team
+  with anyone standing wins the round.
 
 ## Roster (class · special · skills 1 to 3)
 | Fighter | Class | Special | Skill 1 | Skill 2 | Skill 3 |
@@ -80,9 +127,12 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions · `fighterModel.js` procedural jointed model and poses
 - `specials.js` special moves, skills and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
-- `arena.js` coliseum, lighting, crowd, fire ring, collision · `effects.js` pooled particles and FX
+- `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
+- `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
-- `net/session.js` online rooms, host sync and client playback · `net/transport.js` PeerJS links · `net/online-ui.js` online screens
+- `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
+  links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
+  `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 
 ## Extension points for later passes
@@ -92,6 +142,6 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   Sound effects volumes live in the fight setup. `window.__arena.audio.stats` shows what loaded and played.
 - **Online multiplayer:** built (see above). Every fighter is driven by a controller with `getIntent(fighter, world)`;
   remote players use `NetController` on the host. Online clients receive `events` too, with fighters resolved locally.
-- Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match.
+- Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match, `&mode=tournament&teams=2` on the Badlands.
 
 Three.js r180 and PeerJS 1.5.5 are vendored in `vendor/` (both MIT, see `vendor/three-LICENSE` and `vendor/peerjs-LICENSE`).

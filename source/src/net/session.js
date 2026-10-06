@@ -9,10 +9,14 @@ import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
-import { createTransport, TransportError } from './transport.js';
+import { createTransport, createBeacon, TransportError } from './transport.js';
+import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText } from './tournament.js';
 
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 export const MAX_PLAYERS = 8;
+export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
+export const QUEUE_SECONDS = 30;
+const CHAT_KEEP = 80;
 export const ONLINE_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d', '#ff6bd5', '#b38bff', '#4ff0d8', '#f2f2f2'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SNAP_HZ = 30;
@@ -32,7 +36,7 @@ const PROJ_KINDS = Object.keys(PROJECTILES);
 const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'telegraph', 'lightning'];
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
-  'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak'];
+  'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -110,17 +114,33 @@ export class NetSession {
     this.onLobby = () => {};   // UI hooks, set by the online menus
     this.onMatchStart = () => {};
     this.onLeft = () => {};
+    this.onChat = () => {};
     this.unhook = [];
+    this.chat = [];
+    this.beacon = null;
   }
+
+  get kind() { return this.lobby?.kind || null; }
+  get me() { return this.lobby?.members.find((m) => m.id === this.myId) || null; }
 
   get connected() { return !!this.role; }
   get isHost() { return this.role === 'host'; }
 
   // ---------------------------------------------------------------- hosting
-  async host() {
+  // kind: 'room' (a private room), 'queue' (the 30-second public queue) or 'tournament' (fixed `code`, the host is the admin)
+  async host({ kind = 'room', code: fixed = null, tournament = null, keepBeacon = false } = {}) {
+    const beacon = keepBeacon ? this.beacon : null;
+    if (beacon) this.beacon = null;
     this.leave(null, true);
+    this.beacon = beacon;
     const transport = createTransport();
     let code = null;
+    if (fixed) {
+      try { await transport.host(fixed); code = fixed; } catch (err) {
+        if (err.kind === 'taken') throw new TransportError('taken', `Tournament ${fixed} is already open, maybe in another tab or by someone else. Close it there or make a new code.`);
+        throw err;
+      }
+    }
     for (let attempt = 0; attempt < 4 && !code; attempt++) {
       const c = randomCode();
       try { await transport.host(c); code = c; } catch (err) { if (err.kind !== 'taken') throw err; }
@@ -130,11 +150,24 @@ export class NetSession {
     this.role = 'host';
     this.myId = 'host';
     this.heard = new Map();
+    this.chat = [];
+    this.chatAt = new Map();
+    const admin = kind === 'tournament';
     this.lobby = {
-      code, inMatch: false,
-      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES] },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0 }],
+      code, kind, inMatch: false,
+      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0, role: admin ? 'admin' : 'player', group: '' }],
     };
+    if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
+    if (admin) {
+      this.lobby.tournament = {
+        name: cleanText(tournament?.name, 48) || 'Tournament', startsAt: String(tournament?.startsAt || '').slice(0, 32),
+        prize: cleanText(tournament?.prize, 160), teamSize: Math.min(4, Math.max(1, tournament?.teamSize | 0 || 3)),
+        wins: Math.min(3, Math.max(1, tournament?.wins | 0 || 2)), fill: tournament?.fill !== false,
+        status: 'open', bracket: null, current: null, champion: null, last: '',
+      };
+      this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their fundraising group; everyone else can watch.`);
+    }
     transport.onMessage = (id, msg, ch) => this.hostReceive(id, msg, ch);
     transport.onPeerJoin = (id) => { this.heard.set(id, performance.now()); };
     transport.onPeerLeave = (id) => this.dropPeer(id, 'left');
@@ -151,16 +184,26 @@ export class NetSession {
       case 'hello': {
         if (member) return;
         if (msg.v !== PROTOCOL) { this.reject(id, 'That room runs a different version of the game. Both players need the same file.'); return; }
-        if (this.lobby.members.length >= MAX_PLAYERS) { this.reject(id, 'That room is full (8 players).'); return; }
+        const tourney = this.kind === 'tournament';
+        if (!tourney && this.lobby.members.length >= MAX_PLAYERS) { this.reject(id, 'That battle is full (8 players).'); return; }
+        if (tourney && this.lobby.members.length >= MAX_TOURNAMENT) { this.reject(id, `That tournament is full (${MAX_TOURNAMENT} people).`); return; }
+        if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) { this.reject(id, 'That battle already started.'); return; }
         const used = new Set(this.lobby.members.map((m) => m.color));
         const color = [...ONLINE_COLORS.keys()].find((c) => !used.has(c)) ?? 0;
         const fighter = Number.isInteger(msg.fighter) && msg.fighter >= -1 && msg.fighter < ROSTER.length ? msg.fighter : -1;
         let name = cleanName(msg.name);
         const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
         for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
-        this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam() });
-        this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
+        // in a tournament your fundraising group is your team; without one you can only watch
+        const group = cleanGroup(msg.group);
+        const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
+        this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
+        if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
         this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
+        if (tourney) {
+          this.transport.send(id, { t: 'chatlog', l: this.chat });
+          this.systemChat(role === 'player' ? `${name} joined for ${group}.` : `${name} is watching.`);
+        }
         if (this.lobby.inMatch) this.transport.send(id, { t: 'start', spec: this.spec, you: -1 });
         this.broadcastLobby();
         if (this.lobby.inMatch) this.game.hud.feed(`<b style="color:${ONLINE_COLORS[color]}">${escHtml(name)}</b> <span>joined and fights next match</span>`);
@@ -181,6 +224,9 @@ export class NetSession {
       case 'in':
         this.controllers?.get(id)?.receive(msg, performance.now());
         break;
+      case 'chat':
+        if (member) this.hostChat(member, msg.x);
+        break;
       case 'bye':
         this.dropPeer(id, 'left');
         break;
@@ -194,8 +240,170 @@ export class NetSession {
 
   hostHousekeeping() {
     const now = performance.now();
+    // after our own tab stalled (loading a map, a busy machine) everyone's messages are still queued
+    // behind this timer: give them a fresh window instead of dropping the whole room
+    if (now - (this.lastHousekeeping ?? now) > 3000) for (const id of this.heard.keys()) this.heard.set(id, now);
+    this.lastHousekeeping = now;
     for (const [id, t] of this.heard) if (now - t > PEER_TIMEOUT) this.dropPeer(id, 'timed out');
     if (!this.lobby.inMatch) this.transport.broadcast({ t: 'ping' });
+    // the queue counts down, then everyone in it fights (also when the battle fills up)
+    const q = this.lobby.queue;
+    if (q && !this.lobby.inMatch && q.left > 0) {
+      q.left = Math.max(0, Math.ceil((q.ends - now) / 1000));
+      if (this.lobby.members.length >= MAX_PLAYERS) q.left = 0;
+      if (q.left <= 0) { this.beacon?.release(); this.beacon = null; this.startMatch(); } else this.broadcastLobby();
+    }
+  }
+
+  // ---------------------------------------------------------------- the online queue
+  // Joins the open queue, or opens one when nobody else has. Resolves to 'host' or 'client'.
+  async queue() {
+    this.leave(null, true);
+    const name = `queue-v${PROTOCOL}`;
+    let lastErr = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const beacon = createBeacon();
+      try {
+        await beacon.claim(name);
+        this.beacon = beacon;
+        try { await this.host({ kind: 'queue', keepBeacon: true }); } catch (err) { this.beacon?.release(); this.beacon = null; throw err; }
+        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue?.left ?? 0 });
+        return 'host';
+      } catch (err) {
+        if (err.kind !== 'taken') throw err;
+      }
+      try {
+        const info = await beacon.ask(name);
+        if (info?.code && info.left > 2) { await this.join(info.code); return 'client'; }
+        lastErr = new TransportError('busy', 'A battle is just starting. Queue again in a moment.');
+        await sleep(Math.min(5000, ((info?.left || 0) + 1.5) * 1000));
+      } catch (err) {
+        if (!['noroom', 'timeout', 'rejected'].includes(err.kind)) throw err;
+        lastErr = err;
+        await sleep(700);
+      }
+    }
+    throw lastErr || new TransportError('busy', 'The queue is busy. Try again in a moment.');
+  }
+
+  // ---------------------------------------------------------------- chat (tournaments)
+  systemChat(text) { this.pushChat({ n: '', r: 'system', x: cleanText(text, 200), ts: Date.now() }); }
+
+  hostChat(member, text) {
+    const x = cleanText(text, 200);
+    if (!x) return;
+    const now = performance.now();
+    if (now - (this.chatAt.get(member.id) || 0) < 700) return; // a little flood control
+    this.chatAt.set(member.id, now);
+    this.pushChat({ n: member.name, c: ONLINE_COLORS[member.color] || '#ddd', r: member.role, g: member.group || '', x, ts: Date.now() });
+  }
+
+  pushChat(m) {
+    this.chat.push(m);
+    if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
+    this.transport?.broadcast({ t: 'chat', m });
+    this.onChat(m);
+  }
+
+  sendChat(text) {
+    if (!this.connected || this.kind !== 'tournament') return;
+    if (this.isHost) this.hostChat(this.me, text);
+    else this.transport.sendHost({ t: 'chat', x: cleanText(text, 200) });
+  }
+
+  // ---------------------------------------------------------------- tournaments (host = admin)
+  get tournamentTeams() { return teamsOf(this.lobby?.members || []); }
+
+  // Admin: lock in the teams present now and draw the bracket.
+  startTournament() {
+    const t = this.lobby?.tournament;
+    if (!this.isHost || !t || t.status !== 'open') return 'Not open.';
+    const teams = this.tournamentTeams;
+    if (teams.size < 2) return 'At least two teams (fundraising groups) need a player in the room.';
+    t.names = Object.fromEntries([...teams.values()].map((x) => [x.key, x.name]));
+    t.bracket = seedBracket([...teams.keys()]);
+    t.status = 'running';
+    this.systemChat(`The bracket is drawn: ${teams.size} teams. ${this.describeNext()}`);
+    this.broadcastLobby();
+    return null;
+  }
+
+  describeNext() {
+    const t = this.lobby.tournament;
+    const m = nextMatch(t.bracket);
+    if (!m) return '';
+    return `Up next, ${roundName(t.bracket, m.r)}: ${t.names[m.a]} vs ${t.names[m.b]}.`;
+  }
+
+  // Admin: play the next bracket match. Teams field their players present (up to the team size),
+  // CPUs fill empty places when the admin allows it; a team with nobody here forfeits.
+  startTournamentMatch() {
+    const t = this.lobby?.tournament;
+    if (!this.isHost || !t || t.status !== 'running' || this.lobby.inMatch) return;
+    const m = nextMatch(t.bracket);
+    if (!m) return;
+    const teams = this.tournamentTeams;
+    const present = (key) => (teams.get(key)?.members || []).slice(0, t.teamSize);
+    const pa = present(m.a), pb = present(m.b);
+    if (!pa.length || !pb.length) {
+      const winner = pa.length ? m.a : pb.length ? m.b : m.a;
+      this.systemChat(`${t.names[pa.length ? m.b : m.a]} has nobody here and forfeits. ${t.names[winner]} go through.`);
+      this.finishTournamentMatch(m, winner);
+      return;
+    }
+    const size = t.fill ? t.teamSize : Math.max(pa.length, pb.length);
+    const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
+    const fighters = [];
+    [pa, pb].forEach((list, side) => {
+      for (const mem of list) fighters.push({ def: pick(mem.fighter), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side });
+      for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), pname: null, color: null, owner: null, team: side });
+    });
+    t.current = { r: m.r, i: m.i, a: m.a, b: m.b };
+    const label = `${roundName(t.bracket, m.r)} · ${t.names[m.a]} vs ${t.names[m.b]}`;
+    this.systemChat(`${label}. Fight!`);
+    this.launch({
+      setup: { mode: 'tournament', winsNeeded: t.wins, suddenDeath: 120, difficulty: 'hard', teams: { count: 2, names: [t.names[m.a], t.names[m.b]] } },
+      fighters, label,
+      watchHint: `${label}. Watching live: <kbd>←</kbd><kbd>→</kbd> follow a fighter · <kbd>↑</kbd> whole field · <kbd>T</kbd> chat`,
+    });
+  }
+
+  // The host saw the match end: record it and bring everyone back to the bracket.
+  onTournamentMatchEnd(champ) {
+    const t = this.lobby?.tournament;
+    if (!this.isHost || !t?.current) return;
+    const m = t.current;
+    const winner = champ?.team === 1 ? m.b : m.a;
+    t.current = null;
+    clearTimeout(this.backTimer);
+    this.backTimer = setTimeout(() => {
+      if (!this.isHost || !this.lobby) return;
+      this.finishTournamentMatch(m, winner);
+      this.backToLobby();
+    }, 6500);
+  }
+
+  finishTournamentMatch(m, winner) {
+    const t = this.lobby.tournament;
+    const loser = winner === m.a ? m.b : m.a;
+    recordWinner(t.bracket, m.r, m.i, winner);
+    t.last = `${t.names[winner]} beat ${t.names[loser]} in the ${roundName(t.bracket, m.r).toLowerCase()}.`;
+    const champ = champion(t.bracket);
+    if (champ) {
+      t.status = 'done';
+      t.champion = champ;
+      this.systemChat(`${t.names[champ]} are the champions!${t.prize ? ` Prize: ${t.prize}` : ''}`);
+    } else this.systemChat(`${t.last} ${this.describeNext()}`);
+    this.broadcastLobby();
+  }
+
+  kick(id) {
+    if (!this.isHost || id === 'host') return;
+    const m = this.lobby.members.find((x) => x.id === id);
+    if (!m) return;
+    this.reject(id, 'The admin removed you from the tournament.');
+    this.dropPeer(id, 'removed');
+    this.systemChat(`${m.name} was removed by the admin.`);
   }
 
   dropPeer(id, why) {
@@ -220,7 +428,7 @@ export class NetSession {
 
   broadcastLobby(extra = {}) {
     this.transport.broadcast({ t: 'lobby', lobby: this.lobby, ...extra });
-    this.onLobby();
+    this.onLobby(!!extra.back);
   }
 
   setRule(key, d) {
@@ -278,6 +486,7 @@ export class NetSession {
 
   startMatch() {
     if (!this.isHost) return;
+    if (this.kind === 'tournament') { this.startTournamentMatch(); return; }
     const { rules, members } = this.lobby;
     const count = Math.max(rules.count, members.length, 2);
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
@@ -293,18 +502,25 @@ export class NetSession {
       fighters.push(cpu);
     }
     const teams = { count: tc, names: rules.teamNames.slice(0, tc).map((n, i) => cleanTeamName(n, i)) };
-    this.spec = { setup: { winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters };
+    this.launch({ setup: { mode: rules.mode || 'queue', winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
+  }
+
+  // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team }], label?, watchHint? }.
+  launch(spec) {
+    const { rules, members } = this.lobby;
+    const fighters = spec.fighters;
+    this.spec = spec;
     this.controllers = new Map();
     const ctrls = fighters.map((f) => {
       if (f.owner === 'host') return new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active);
       if (f.owner) { const c = new NetController(fighters.indexOf(f)); this.controllers.set(f.owner, c); return c; }
-      return new AIController(rules.difficulty);
+      return new AIController(spec.setup.difficulty || rules.difficulty);
     });
     this.unhookAll();
     this.game.net = this;
     this.menus.hideAll();
     this.installHostHooks();
-    this.game.startOnline(this.spec, 'host', ctrls, 0, this.bindings);
+    this.game.startOnline(this.spec, 'host', ctrls, fighters.findIndex((f) => f.owner === 'host'), this.bindings);
     this.lobby.inMatch = true;
     this.snapAcc = 1;
     this.snapSeq = 0;
@@ -371,14 +587,16 @@ export class NetSession {
         r2(f.moveAmount), r2(f.runPhase), r2(Math.max(0, f.invuln)), f.stats.wins, f.stats.kos, Math.round(f.stats.damage),
         Math.round(f.stamina), r2(f.cooldowns[0]), r2(f.cooldowns[1]), Math.round(f.shield), f.skillId ? SKILL_IDS.indexOf(f.skillId) : -1,
         (f.armor > 0 || f.power > 0 || f.lifesteal > 0 ? 1 : 0) | (f.vanish > 0 ? 2 : 0) | (f.exhausted ? 4 : 0) | (f.haste > 0 ? 8 : 0) | (f.slow > 0 ? 16 : 0) | (f.sprinting ? 32 : 0),
-        r2(f.cooldowns[2]),
+        r2(f.cooldowns[2]), r2(f.downed), r2(f.reviveProgress), f.maxHp,
       ]),
+      pu: g.pickups.state(),
       p: g.projectiles.filter((p) => !p.dead).map((p) => [p.id, PROJ_KINDS.indexOf(p.kind), r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.dir.x), r2(p.dir.z), p.owner.slot]),
     };
   }
 
   // ---------------------------------------------------------------- joining
-  async join(code) {
+  // role/group: tournaments only ('player' with your fundraising group, or 'spectator')
+  async join(code, { role = 'player', group = '' } = {}) {
     this.leave(null, true);
     const transport = createTransport();
     await transport.join(code);
@@ -390,11 +608,16 @@ export class NetSession {
     });
     transport.onMessage = (id, msg) => this.clientReceive(msg);
     transport.onHostLost = () => this.leave('Lost the connection to the host.');
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter });
+    this.chat = [];
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group) });
     this.hostHeard = performance.now();
+    let lastTick = performance.now();
     this.pingTimer = setInterval(() => {
+      const now = performance.now();
+      if (now - lastTick > 5000) this.hostHeard = now; // our tab stalled; the host's messages are still queued
+      lastTick = now;
       transport.sendHost({ t: 'ping' });
-      if (performance.now() - this.hostHeard > PEER_TIMEOUT) this.leave('Lost the connection to the host.');
+      if (now - this.hostHeard > PEER_TIMEOUT) this.leave('Lost the connection to the host.');
     }, 2000);
     try {
       await welcome;
@@ -433,6 +656,16 @@ export class NetSession {
         break;
       case 'fx':
         if (Array.isArray(msg.l)) for (const item of msg.l) this.fxQueue?.push({ ht: msg.ht, item });
+        break;
+      case 'chatlog':
+        if (Array.isArray(msg.l)) { this.chat = msg.l.slice(-CHAT_KEEP); this.onChat(null); }
+        break;
+      case 'chat':
+        if (msg.m && typeof msg.m === 'object') {
+          this.chat.push(msg.m);
+          if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
+          this.onChat(msg.m);
+        }
         break;
       case 'bye':
         this.leave('The host closed the room.');
@@ -558,9 +791,14 @@ export class NetSession {
       f.haste = buffs & 8 ? 1 : 0;
       f.slow = buffs & 16 ? 1 : 0;
       f.sprinting = !!(buffs & 32);
+      f.downed = num(fa[27]);
+      f.reviveProgress = num(fa[28]);
+      if (fa[29] > 0) f.maxHp = fa[29];
+      if (f.alive) f.model.ring.visible = true;
       f.updateBuffVisuals();
       f.syncVisual(flags & 16 ? 0 : dt);
     });
+    g.pickups.applyState(a.pu);
     // projectiles: create, move and retire to match the host
     const live = new Set();
     const prev = new Map((a.p || []).map((p) => [p[0], p]));
@@ -623,12 +861,17 @@ export class NetSession {
 
   // Leave the room. `reason` is shown to the player; `quiet` skips the UI callback.
   leave(reason = null, quiet = false) {
+    this.beacon?.release();
+    this.beacon = null;
     if (!this.role) return;
     try {
       if (this.isHost) this.transport.broadcast({ t: 'bye' });
       else this.transport.sendHost({ t: 'bye' });
     } catch { /* already gone */ }
     clearInterval(this.pingTimer);
+    clearTimeout(this.backTimer);
+    this.beacon?.release();
+    this.beacon = null;
     const transport = this.transport;
     if (transport) transport.onMessage = transport.onPeerJoin = transport.onPeerLeave = transport.onHostLost = () => {};
     setTimeout(() => transport?.close(), 200);
@@ -641,5 +884,7 @@ export class NetSession {
     if (!quiet) this.onLeft(reason);
   }
 }
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function escHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

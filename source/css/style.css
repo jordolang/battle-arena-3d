@@ -311,3 +311,94 @@ button { font: inherit; color: inherit; }
 .net-slots .who span { overflow: hidden; text-overflow: ellipsis; }
 .net-slots .who small { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
 
+
+/* ---------- Modes, power-ups and team tactics ---------- */
+.menu-list .big small { font-size: 0.55em; letter-spacing: 0.14em; color: var(--ash); opacity: 0.75; margin-left: 0.6em; }
+.feed-row .stab { color: #ff5a4a; }
+.tag.downed span { color: #7affc8; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; }
+.tag.downed .mini div { background: #7affc8; }
+
+/* ---------- Tournament ---------- */
+.plate.wide, .net-plate.wide { width: min(1180px, 100%); }
+
+.net-card .t-myteam { color: var(--bone); }
+.net-card .t-myteam b { color: var(--gold); }
+.t-join-btns { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.t-opts { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.t-opts .row { font-size: 16px; padding: 5px 8px; }
+.t-admin-code { font-size: 15px !important; line-height: 1.45; }
+.code-chip { color: var(--gold); letter-spacing: 0.2em; font-size: 18px; }
+.nav.link { font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ember); padding: 0 4px; }
+.nav.link:focus, .nav.link:hover { color: var(--bone); text-decoration: underline; }
+.field input[type="datetime-local"] { font-size: 18px; letter-spacing: 0.02em; color-scheme: dark; }
+
+.t-head { margin-bottom: 14px; }
+.t-head h2 { margin-bottom: 2px; }
+.t-head p { margin: 2px 0 0; color: var(--ash); font-size: 17px; }
+.t-head .t-prize b { color: var(--gold); letter-spacing: 0.14em; text-transform: uppercase; font-size: 14px; margin-right: 6px; }
+.t-head .t-code { color: var(--gold); letter-spacing: 0.2em; }
+.t-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(260px, 0.95fr); gap: 20px; align-items: start; }
+@media (max-width: 980px) { .t-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .t-chat-slot { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .t-grid { grid-template-columns: minmax(0, 1fr); } }
+.t-teams { display: flex; flex-direction: column; gap: 8px; }
+.t-team { padding: 6px 10px; border-left: 3px solid var(--ember); background: rgba(0, 0, 0, 0.25); }
+.t-team.live { border-left-color: var(--gold); box-shadow: inset 0 0 0 1px rgba(255, 200, 97, 0.35); }
+.t-team.out { opacity: 0.45; }
+.t-team.champ { border-left-color: var(--gold); background: rgba(255, 200, 97, 0.1); }
+.t-team-name { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; }
+.t-team-name span { font-weight: 600; font-size: 13px; color: var(--ash); letter-spacing: 0.08em; white-space: nowrap; }
+.t-team ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 16px; }
+.t-team li { display: flex; align-items: baseline; gap: 6px; }
+.t-team li em { color: var(--ash); font-style: normal; font-size: 14px; }
+.t-team li small, .t-fans small { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
+.t-fans { color: var(--ash); font-size: 15px; margin-top: 4px; }
+.t-fans b { color: var(--bone); font-weight: 600; margin-right: 4px; }
+.kick { margin-left: auto; }
+.t-me { margin-top: 12px; }
+.t-me .slot { grid-template-columns: minmax(0, 1fr); }
+.t-me .fighter { text-align: left; border-left: 2px solid var(--fc); }
+.empty { color: var(--ash); font-size: 16px; margin: 0; }
+.rounds { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.round { display: flex; flex-direction: column; justify-content: space-around; gap: 8px; min-width: 130px; flex: 1; }
+.round-h { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ash); }
+.match { position: relative; display: flex; flex-direction: column; padding: 5px 8px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 2px; font-size: 15px; }
+.match span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.match span + span { border-top: 1px solid rgba(255, 255, 255, 0.06); margin-top: 2px; padding-top: 2px; }
+.match .won { color: var(--gold); font-weight: 700; }
+.match .lost { color: var(--ash); text-decoration: line-through; opacity: 0.7; }
+.match .tbd { color: var(--ash); opacity: 0.55; font-style: italic; }
+.match em { position: absolute; top: -8px; right: 6px; font-style: normal; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 0 5px; background: var(--ember); color: #160a04; font-weight: 700; border-radius: 2px; }
+.match.live { border-color: var(--gold); }
+.match.live em { background: var(--blood); color: var(--bone); animation: pulse 0.7s infinite alternate; }
+.match.next { border-color: rgba(255, 122, 42, 0.6); }
+.t-last { color: var(--bone); font-size: 16px; margin: 10px 0 0; }
+.champ-line { color: var(--gold); font-size: 20px; }
+.champ-line b { font-family: var(--display); font-weight: 400; font-size: 30px; }
+.t-note.bad { color: #ff8a6a; }
+
+/* live chat: docked in the tournament lobby, a corner overlay during matches */
+#chat { display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 3px; min-height: 0; }
+.t-chat-slot #chat { height: min(420px, 50vh); }
+#chat.overlay {
+  position: absolute; right: 12px; bottom: 12px; width: min(340px, calc(100% - 24px)); height: 210px; z-index: 5;
+  background: rgba(8, 6, 7, 0.55); opacity: 0.8; transition: opacity 0.3s;
+}
+#chat.overlay:not(.typing) .chat-input { opacity: 0.6; }
+#chat.overlay.typing, #chat.overlay:hover { opacity: 1; background: rgba(8, 6, 7, 0.8); }
+#chat.ping { animation: chatping 0.8s ease-out; }
+@keyframes chatping { from { box-shadow: 0 0 0 2px var(--gold); opacity: 1; } }
+.chat-head { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ember); border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.chat-key { color: var(--ash); letter-spacing: 0.1em; }
+.chat-log { flex: 1; overflow-y: auto; padding: 6px 10px; font-size: 15px; line-height: 1.35; user-select: text; min-height: 0; }
+.chat-row { margin: 2px 0; word-wrap: break-word; }
+.chat-row b { font-weight: 700; margin-right: 4px; }
+.chat-row.system i { color: var(--gold); font-style: normal; opacity: 0.9; }
+.chat-row.admin { background: rgba(255, 200, 97, 0.08); }
+.badge { font-style: normal; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ash); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 2px; padding: 0 4px; margin-right: 5px; vertical-align: 1px; white-space: nowrap; }
+.badge.admin { color: #160a04; background: var(--gold); border-color: var(--gold); font-weight: 700; }
+.chat-input {
+  font: inherit; font-size: 15px; color: var(--bone); background: rgba(255, 255, 255, 0.05); border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 7px 10px; outline: none; user-select: text;
+}
+.chat-input:focus { background: rgba(255, 122, 42, 0.1); }
+@media (max-width: 700px) { #chat.overlay { height: 150px; } }

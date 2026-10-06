@@ -87,12 +87,18 @@ export class Arena {
     scene.add(this.group);
     this.time = 0;
     this.excitement = 0;
+    this.name = 'coliseum';
+    this.radius = ARENA.radius;
     this.pillars = [];
+    this.segments = [];
+    this.zones = [];
     this.flames = [];
     this.lights = [];
-
-    scene.background = new THREE.Color(0x07070b);
-    scene.fog = new THREE.FogExp2(0x0b0a10, 0.018);
+    // power-up pads sit between the pillars
+    this.pads = [0, 1, 2, 3].map((i) => { const a = (i / 4) * Math.PI * 2; return { x: Math.cos(a) * 7, z: Math.sin(a) * 7 }; });
+    this.background = new THREE.Color(0x07070b);
+    this.fog = new THREE.FogExp2(0x0b0a10, 0.018);
+    this.show(true);
 
     this.buildSky();
     this.buildLights(quality);
@@ -357,12 +363,40 @@ export class Arena {
   }
 
   setFireRing(radius) {
-    const on = radius < 30;
+    const on = radius < 90;
     this.fireRing.visible = on; this.fireGlow.visible = on;
     if (!on) return;
     this.fireRing.scale.set(radius, 1, radius);
     this.fireGlow.scale.set(radius, 1, radius);
     this.fireMat.uniforms.intensity.value = Math.min(1, this.fireMat.uniforms.intensity.value + 0.02);
+  }
+
+  // Only one battleground is on screen at a time.
+  show(on) {
+    this.group.visible = on;
+    if (on) { this.scene.background = this.background; this.scene.fog = this.fog; }
+  }
+
+  // Starting spots: a ring around the centre, teammates side by side (`list` is already ordered by team).
+  spawnPoints(list) {
+    const n = list.length;
+    const spawnR = n <= 2 ? 4 : n <= 4 ? 6 : 7.5;
+    const offset = Math.PI / 2 + (n === 2 ? 0 : Math.PI / n);
+    return list.map((f, i) => {
+      const a = offset + (i / n) * Math.PI * 2;
+      const x = Math.cos(a) * spawnR, z = Math.sin(a) * spawnR;
+      return { x, z, facing: Math.atan2(-x, -z) };
+    });
+  }
+
+  // Steering push away from nearby obstacles for CPU fighters; `strafe` picks which way to slide round them.
+  avoid(x, z, strafe) {
+    let mx = 0, mz = 0;
+    for (const p of this.pillars) {
+      const px = x - p.x, pz = z - p.z, pd = Math.hypot(px, pz);
+      if (pd < p.r + 1.6 && pd > 1e-3) { mx += (px / pd) * 0.8 + (-pz / pd) * strafe * 0.8; mz += (pz / pd) * 0.8 + (px / pd) * strafe * 0.8; }
+    }
+    return { x: mx, z: mz };
   }
 
   resetFireRing() { this.fireMat.uniforms.intensity.value = 0; this.setFireRing(99); }

@@ -14,6 +14,8 @@ export class Keyboard {
     this.captureGameKeys = false;
 
     window.addEventListener('keydown', (e) => {
+      // typing in the chat box never reaches the game or the menus
+      if (e.target?.closest?.('[data-typing]')) return;
       if (!e.repeat) {
         this.held.add(e.code);
         this.presses.set(e.code, (this.presses.get(e.code) || 0) + 1);

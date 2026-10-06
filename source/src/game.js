@@ -1,10 +1,12 @@
 // Game orchestration: renderer, fixed-step simulation, rounds and match flow.
 import * as THREE from 'three';
-import { SIM_DT, ARENA, ROSTER, PLAYER_COLORS, TEAM_COLORS, cleanTeamName } from './config.js';
+import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, COMBAT, cleanTeamName, modeRules } from './config.js';
 import { events } from './events.js';
 import { Arena } from './arena.js';
+import { Badlands } from './battleground.js';
+import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
-import { Fighter } from './fighter.js';
+import { Fighter, allies } from './fighter.js';
 import { CameraRig } from './camera.js';
 import { AIController } from './ai.js';
 import { HumanController } from './input.js';
@@ -33,8 +35,15 @@ export class Game {
 
     this.scene = new THREE.Scene();
     this.rig = new CameraRig(1);
-    this.arena = new Arena(this.scene, quality === 'auto' ? 'high' : quality);
+    this.arenaQuality = quality === 'auto' ? 'high' : quality;
+    this.arenas = { coliseum: new Arena(this.scene, this.arenaQuality) };
+    this.arena = this.arenas.coliseum;
     this.effects = new Effects(this.scene);
+    this.pickups = new Pickups(this);
+    this.pickups.setPads(this.arena.pads);
+    this.rules = modeRules('cpu');
+    this.friendlyFire = false;
+    this.reviveOn = false;
     this.hud = new Hud(hudRoot);
 
     // world state read by fighters, AI and specials
@@ -97,14 +106,56 @@ export class Game {
       this.arena.excitement += 1.2;
       this.effects.ring(fighter.pos.x, 0.1, fighter.pos.z, fighter.def.eyes, 3.2, 0.6);
       if (this.mode !== 'match') return;
-      const v = `<b style="color:${hex(fighter.teamColor ?? fighter.def.eyes)}">${esc(fighter.name)}</b>`;
-      const k = by ? `<b style="color:${hex(by.teamColor ?? by.def.eyes)}">${esc(by.name)}</b>` : '<b class="fire">The flames</b>';
-      this.hud.feed(`${k} <span>defeated</span> ${v}`);
+      const v = nameTag(fighter);
+      const k = by ? nameTag(by) : '<b class="fire">The flames</b>';
+      const verb = by && allies(by, fighter) ? 'betrayed' : fighter.downed > 0 ? 'downed' : 'defeated';
+      this.hud.feed(`${k} <span>${verb}</span> ${v}${fighter.downed > 0 ? ' <span>· a teammate can revive</span>' : ''}`);
       flashScreen();
+    });
+    events.on('backstab', ({ fighter, by, quiet }) => {
+      if (this.online === 'client' || this.mode !== 'match' || quiet || !by) return;
+      this.hud.feed(`${nameTag(by)} <span class="stab">backstabbed</span> ${nameTag(fighter)}`);
+    });
+    events.on('parry', ({ fighter, by }) => {
+      if (this.online === 'client' || this.mode !== 'match' || !(fighter.isPlayer || by?.isPlayer)) return;
+      this.hud.feed(`${nameTag(fighter)} <span>parried</span> ${nameTag(by)}`);
+    });
+    events.on('revive', ({ fighter, by }) => {
+      if (this.online === 'client' || this.mode !== 'match') return;
+      this.hud.feed(`${by ? nameTag(by) : 'A teammate'} <span>revived</span> ${nameTag(fighter)}`);
+    });
+    events.on('pickup', ({ fighter, type }) => {
+      if (this.online === 'client' || this.mode !== 'match' || !fighter.isPlayer) return;
+      this.hud.feed(`${nameTag(fighter)} <span>grabbed</span> <b style="color:${hex(POWERUPS[type].color)}">${POWERUPS[type].label}</b>`);
     });
   }
 
   shake(a) { this.rig.shake(a); }
+
+  // Swaps the battleground: the coliseum for quick fights, the much larger Badlands for tournaments.
+  useArena(name) {
+    this.rig.maxDistance = name === 'badlands' ? 50 : 36;
+    if (!this.arenas[name]) {
+      this.arenas[name] = new Badlands(this.scene, this.arenaQuality);
+      this.arenas[name].moon.castShadow = this.renderer.shadowMap.enabled;
+    }
+    const next = this.arenas[name];
+    for (const a of Object.values(this.arenas)) if (a !== next) a.show(false);
+    next.show(true);
+    if (this.arena !== next) {
+      this.arena = next;
+      this.pickups.setPads(next.pads);
+      this.warmShaders();
+    }
+  }
+
+  // Mode rules (MODES in config.js) for the match about to start.
+  applyRules(setup) {
+    this.rules = { ...modeRules(setup?.mode || 'cpu'), ...(setup?.rules || {}) };
+    this.useArena(this.rules.map);
+    this.friendlyFire = !!this.rules.friendlyFire;
+    this.reviveOn = !!this.rules.revive;
+  }
 
   // Compiles every shader the match can need (hidden effect pools, the fire ring, buff shells,
   // projectiles) up front, so the first special or KO of a match does not stall a frame.
@@ -164,6 +215,8 @@ export class Game {
     this.localFighter = null;
     this.hud.show(false);
     this.rig.mode = 'orbit';
+    this.rig.follow = null;
+    this.applyRules({ mode: 'cpu' });
     const ids = [...ROSTER.keys()].sort(() => Math.random() - 0.5).slice(0, 6);
     this.fighters = ids.map((i, k) => new Fighter(ROSTER[i], k, new AIController('normal')));
     for (const f of this.fighters) this.scene.add(f.model.root);
@@ -180,6 +233,7 @@ export class Game {
     this.bindings = bindings;
     this.keyboard.setGameKeys(bindings);
     this.keyboard.captureGameKeys = true;
+    this.applyRules(setup);
     this.fighters = setup.slots.map((s, i) => {
       const def = ROSTER[s.fighter < 0 ? Math.floor(Math.random() * ROSTER.length) : s.fighter];
       const ctrl = s.control === 'cpu'
@@ -188,6 +242,7 @@ export class Game {
       return new Fighter(def, i, ctrl);
     });
     this.applyTeams(setup.teams, setup.slots.map((s) => s.team));
+    for (const f of this.fighters) f.setDurability(this.rules.durability);
     this.tintDuplicates();
     for (const f of this.fighters) this.scene.add(f.model.root);
     this.round = 0;
@@ -199,6 +254,7 @@ export class Game {
       return [Hud.controlHint(f.controller.playerIndex, b), Hud.skillHint(f, b, `P${f.controller.playerIndex + 1}`)];
     }));
     this.hintUntil = 12;
+    this.rig.follow = humans.length === 1 && this.arena.radius > 20 ? humans[0] : null;
     this.beginRound(false);
   }
 
@@ -207,6 +263,7 @@ export class Game {
     const count = teams?.count || 0;
     this.teams = count ? Array.from({ length: count }, (_, t) => ({ name: cleanTeamName(teams.names?.[t], t), color: TEAM_COLORS[t] })) : null;
     if (!this.teams) return;
+    this.arena.setTeams?.(this.teams);
     this.fighters.forEach((f, i) => {
       const t = ((picks[i] ?? i) % count + count) % count;
       f.setTeam(t, this.teams[t].name, this.teams[t].color);
@@ -239,6 +296,7 @@ export class Game {
     this.keyboard.setGameKeys([bindings[0], bindings[1]]);
     this.keyboard.captureGameKeys = true;
     this.paused = false;
+    this.applyRules(spec.setup);
     this.fighters = spec.fighters.map((s, i) => {
       const f = new Fighter(ROSTER[s.def], i, controllers ? controllers[i] : null);
       f.netName = s.pname || null;
@@ -247,13 +305,15 @@ export class Game {
       return f;
     });
     this.applyTeams(spec.setup.teams, spec.fighters.map((s) => s.team));
+    for (const f of this.fighters) f.setDurability(this.rules.durability);
     this.tintDuplicates();
     for (const f of this.fighters) this.scene.add(f.model.root);
     this.localFighter = this.fighters[you] || null;
+    this.rig.follow = this.arena.radius > 20 ? this.localFighter : null;
     this.round = 0;
     this.hud.build(this.fighters, spec.setup.winsNeeded, this.teams, (f, a) => bindings[0]?.[a]);
     this.hud.show(true);
-    this.hud.setHints(you >= 0 ? [Hud.onlineHint(bindings), Hud.skillHint(this.localFighter, bindings[0], 'You')] : ['You are watching this match. You join the next one.']);
+    this.hud.setHints(you >= 0 ? [Hud.onlineHint(bindings), Hud.skillHint(this.localFighter, bindings[0], 'You')] : [spec.watchHint || 'You are watching this match. You join the next one.']);
     this.hintUntil = 12;
     if (role === 'host') this.beginRound(false);
     else {
@@ -261,6 +321,7 @@ export class Game {
       this.rig.mode = 'fight';
       this.rig.winner = null;
       this.arena.resetFireRing();
+      this.pickups.reset(false);
     }
   }
 
@@ -279,16 +340,11 @@ export class Game {
     for (const p of this.projectiles) if (!p.dead) p.burst(this);
     this.projectiles = [];
     this.delayed = [];
-    const n = this.fighters.length;
-    const spawnR = n <= 2 ? 4 : n <= 4 ? 6 : 7.5;
-    const offset = Math.PI / 2 + (n === 2 ? 0 : Math.PI / n);
-    // teammates start side by side
+    this.pickups.reset(!!this.rules.powerups);
+    // teammates start side by side (or in their base on the Badlands)
     const order = this.teamMode ? [...this.fighters].sort((a, b) => a.team - b.team || a.slot - b.slot) : this.fighters;
-    order.forEach((f, i) => {
-      const a = offset + (i / n) * Math.PI * 2;
-      const p = new THREE.Vector3(Math.cos(a) * spawnR, 0, Math.sin(a) * spawnR);
-      f.reset(p, Math.atan2(-p.x, -p.z));
-    });
+    const spots = this.arena.spawnPoints(order);
+    order.forEach((f, i) => f.reset(new THREE.Vector3(spots[i].x, 0, spots[i].z), spots[i].facing));
     if (this.mode === 'match') {
       this.rig.mode = 'fight';
       this.rig.winner = null;
@@ -318,16 +374,19 @@ export class Game {
       if (sd > 0 && this.fightTime > sd) {
         if (!this.suddenDeath) {
           this.suddenDeath = true;
-          this.ringRadius = ARENA.radius + 0.6;
+          this.ringRadius = this.arena.radius + 0.6;
           if (this.mode === 'match') this.hud.announce('Sudden Death', 'sudden', 1800);
           events.emit('suddenDeath', {});
         }
-        this.ringRadius = Math.max(2.6, this.ringRadius - dt * 0.42);
+        this.ringRadius = Math.max(2.6, this.ringRadius - dt * 0.42 * Math.max(1, this.arena.radius / 22));
       }
     }
 
     for (const f of this.fighters) f.update(dt, this);
     this.resolveCollisions(dt);
+    this.pickups.update(dt, this);
+    if (this.arena.zones.length && this.phase === 'fight') this.healZones(dt);
+    if (this.reviveOn) this.tickRevives(dt);
 
     for (const p of this.projectiles) if (!p.dead) p.update(dt, this);
     if (this.projectiles.some((p) => p.dead)) this.projectiles = this.projectiles.filter((p) => !p.dead);
@@ -354,6 +413,39 @@ export class Game {
       const w = this.roundWinner;
       if (w && w.alive && w.grounded && w.state === 'idle' && this.phaseTime > 0.6) w.setState('victory');
       if (this.phaseTime > 3.2) this.afterRound();
+    }
+  }
+
+  // Healing springs on the Badlands mend anyone standing in them.
+  healZones(dt) {
+    for (const f of this.fighters) {
+      if (!f.alive || f.hp >= f.maxHp) continue;
+      for (const z of this.arena.zones) {
+        if (Math.hypot(f.pos.x - z.x, f.pos.z - z.z) > z.r) continue;
+        f.hp = Math.min(f.maxHp, f.hp + f.maxHp * z.heal * dt);
+        if (Math.random() < dt * 6) this.effects.sparks(f.pos.x, 0.4, f.pos.z, 0x7affc8, 3, 2);
+        break;
+      }
+    }
+  }
+
+  // Tournament: a teammate standing over a downed fighter pulls them back up; alone, they bleed out.
+  tickRevives(dt) {
+    if (this.phase !== 'fight') return;
+    for (const f of this.fighters) {
+      if (f.alive || f.downed <= 0) continue;
+      f.downed -= dt;
+      let helper = null;
+      for (const o of this.fighters) {
+        if (!o.alive || !allies(o, f) || !(o.state === 'idle' || o.state === 'block')) continue;
+        if (Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < COMBAT.reviveRange) { helper = o; break; }
+      }
+      if (helper) {
+        f.reviveProgress += dt;
+        if (Math.random() < dt * 10) this.effects.sparks(f.pos.x, 0.5, f.pos.z, 0x7affc8, 3, 2.5);
+      } else f.reviveProgress = Math.max(0, f.reviveProgress - dt * 0.5);
+      if (f.reviveProgress >= COMBAT.reviveTime) f.revive(this, helper);
+      else if (f.downed <= 0) { f.downed = 0; f.reviveProgress = 0; }
     }
   }
 
@@ -445,12 +537,13 @@ export class Game {
     try {
       if (this.online === 'client') {
         this.net.clientStep(dt);
+        this.pickups.animate(this.time);
         this.effects.update(dt);
         this.arena.update(dt);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
-        if (this.ringRadius < 30) this.arena.setFireRing(this.ringRadius);
+        if (this.ringRadius < 90) this.arena.setFireRing(this.ringRadius);
         if (this.mode === 'match') this.updateHud(dt, !!this.localFighter && !this.localFighter.alive);
       } else if (!this.paused) {
         if (this.slowmo > 0) { this.slowmo -= dt; this.timeScale = this.slowmo > 0 ? 0.3 : 1; }
@@ -464,11 +557,12 @@ export class Game {
         while (this.acc >= SIM_DT && steps < maxSteps) { this.tick(SIM_DT); this.acc -= SIM_DT; steps++; }
         if (steps >= maxSteps) this.acc = 0;
         this.effects.update(dt * scale);
+        this.pickups.animate(this.time);
         this.arena.update(dt * scale);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
-        if (this.ringRadius < 30) this.arena.setFireRing(this.ringRadius);
+        if (this.ringRadius < 90) this.arena.setFireRing(this.ringRadius);
         if (this.online === 'host') this.net?.afterFrame(dt);
         if (this.mode === 'match') this.updateHud(dt, this.online ? !!this.localFighter && !this.localFighter.alive : anyHuman && !humansAlive);
       }
@@ -520,11 +614,14 @@ export class Game {
   stats() {
     return {
       fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, phase: this.phase, round: this.round, mode: this.mode,
-      fighters: this.fighters.map((f) => ({ name: f.name, hp: Math.round(f.hp), alive: f.alive, wins: f.stats.wins, kos: f.stats.kos, state: f.state })),
+      rules: this.rules.mode, map: this.arena.name, pickups: this.pickups.state(),
+      fighters: this.fighters.map((f) => ({ name: f.name, team: f.team, hp: Math.round(f.hp), maxHp: f.maxHp, alive: f.alive, downed: +f.downed.toFixed(1), wins: f.stats.wins, kos: f.stats.kos, state: f.state })),
       drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles,
     };
   }
 }
+
+function nameTag(f) { return `<b style="color:${hex(f.teamColor ?? f.def.eyes)}">${esc(f.netName || f.name)}</b>`; }
 
 function flashScreen() {
   const el = document.getElementById('flash');

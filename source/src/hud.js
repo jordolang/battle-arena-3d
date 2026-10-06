@@ -1,6 +1,6 @@
 // In-fight overlay: fighter cards, floating name tags, announcer, KO feed.
 import * as THREE from 'three';
-import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, keyLabel } from './config.js';
+import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, COMBAT, keyLabel } from './config.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -73,7 +73,7 @@ export class Hud {
         enFill: card.querySelector('.en .fill'), pips: [...card.querySelectorAll('.pips i')],
         stFill: card.querySelector('.st .fill'), shield: card.querySelector('.hp .shield'),
         chips: [...card.querySelectorAll('.chip')].map((el) => ({ el, cd: el.querySelector('.cd'), last: '' })),
-        mini: tag.querySelector('.mini div'), trail: f.hp, lastHp: -1, lastEn: -1, lastSt: -1, lastSh: -1, lastWins: -1, lastAlive: true,
+        mini: tag.querySelector('.mini div'), label: tag.querySelector('span'), name: tag.querySelector('span').textContent, downed: false, trail: f.hp, lastHp: -1, lastEn: -1, lastSt: -1, lastSh: -1, lastWins: -1, lastAlive: true,
       };
     });
   }
@@ -186,9 +186,21 @@ export class Hud {
         it.card.classList.toggle('dead', !f.alive);
         it.lastAlive = f.alive;
       }
-      // floating tag above the head
-      if (!f.alive) { it.tag.style.opacity = '0'; continue; }
-      this.v.set(f.pos.x, f.pos.y + 2.25 * f.def.scale, f.pos.z).project(camera);
+      // floating tag above the head; a downed fighter (tournament) shows a revive bar instead
+      const downed = !f.alive && f.downed > 0;
+      if (downed !== it.downed) {
+        it.downed = downed;
+        it.tag.classList.toggle('downed', downed);
+        if (!downed) { it.label.textContent = it.name; it.lastHp = -1; }
+      }
+      if (!f.alive && !downed) { it.tag.style.opacity = '0'; continue; }
+      if (downed) {
+        const secs = Math.ceil(f.downed);
+        const text = f.reviveProgress > 0 ? 'Reviving' : `Down ${secs}`;
+        if (it.label.textContent !== text) it.label.textContent = text;
+        it.mini.style.transform = `scaleX(${Math.min(1, f.reviveProgress / COMBAT.reviveTime)})`;
+      }
+      this.v.set(f.pos.x, f.pos.y + (downed ? 0.9 : 2.25 * f.def.scale), f.pos.z).project(camera);
       if (this.v.z > 1) { it.tag.style.opacity = '0'; continue; }
       const x = (this.v.x * 0.5 + 0.5) * width, y = (-this.v.y * 0.5 + 0.5) * height;
       it.tag.style.opacity = '1';

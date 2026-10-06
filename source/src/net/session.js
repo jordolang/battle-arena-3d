@@ -10,7 +10,7 @@ import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
-import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText } from './tournament.js';
+import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, normFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
 export const PROTOCOL = 4;
 export const MAX_PLAYERS = 8;
@@ -153,6 +153,8 @@ export class NetSession {
     this.chat = [];
     this.chatAt = new Map();
     const admin = kind === 'tournament';
+    this.fundraisers = [];
+    this.pending = new Set(); // players whose fundraiser code is being checked
     this.lobby = {
       code, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
@@ -165,8 +167,11 @@ export class NetSession {
         prize: cleanText(tournament?.prize, 160), teamSize: Math.min(4, Math.max(1, tournament?.teamSize | 0 || 3)),
         wins: Math.min(3, Math.max(1, tournament?.wins | 0 || 2)), fill: tournament?.fill !== false,
         status: 'open', bracket: null, current: null, champion: null, last: '',
+        registration: tournament?.registration === 'open' ? 'open' : 'code',
       };
-      this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their fundraising group; everyone else can watch.`);
+      // the admin's fundraiser codes stay here, out of the lobby every player receives
+      this.fundraisers = tournament?.groups || [];
+      this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their ${this.lobby.tournament.registration === 'code' ? 'fundraiser code' : 'fundraising group'}; everyone else can watch.`);
     }
     transport.onMessage = (id, msg, ch) => this.hostReceive(id, msg, ch);
     transport.onPeerJoin = (id) => { this.heard.set(id, performance.now()); };
@@ -182,31 +187,25 @@ export class NetSession {
     const member = this.lobby.members.find((m) => m.id === id);
     switch (msg.t) {
       case 'hello': {
-        if (member) return;
+        if (member || this.pending.has(id)) return;
         if (msg.v !== PROTOCOL) { this.reject(id, 'That room runs a different version of the game. Both players need the same file.'); return; }
         const tourney = this.kind === 'tournament';
         if (!tourney && this.lobby.members.length >= MAX_PLAYERS) { this.reject(id, 'That battle is full (8 players).'); return; }
         if (tourney && this.lobby.members.length >= MAX_TOURNAMENT) { this.reject(id, `That tournament is full (${MAX_TOURNAMENT} people).`); return; }
         if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) { this.reject(id, 'That battle already started.'); return; }
-        const used = new Set(this.lobby.members.map((m) => m.color));
-        const color = [...ONLINE_COLORS.keys()].find((c) => !used.has(c)) ?? 0;
-        const fighter = Number.isInteger(msg.fighter) && msg.fighter >= -1 && msg.fighter < ROSTER.length ? msg.fighter : -1;
-        let name = cleanName(msg.name);
-        const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
-        for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
-        // in a tournament your fundraising group is your team; without one you can only watch
+        // in a tournament your fundraising group is your team; without one you can only watch.
+        // When the admin requires fundraiser codes, fighters must bring one: it names their group.
         const group = cleanGroup(msg.group);
-        const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
-        this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
-        if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
-        this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
-        if (tourney) {
-          this.transport.send(id, { t: 'chatlog', l: this.chat });
-          this.systemChat(role === 'player' ? `${name} joined for ${group}.` : `${name} is watching.`);
+        if (tourney && msg.role === 'player' && this.lobby.tournament.registration === 'code') {
+          this.pending.add(id);
+          this.registeredGroup(group).then((reg) => {
+            if (!this.pending.delete(id) || !this.lobby || this.lobby.members.some((m) => m.id === id)) return;
+            if (reg.name) { this.admit(id, msg, cleanGroup(reg.name)); return; }
+            this.reject(id, reg.why);
+          });
+          return;
         }
-        if (this.lobby.inMatch) this.transport.send(id, { t: 'start', spec: this.spec, you: -1 });
-        this.broadcastLobby();
-        if (this.lobby.inMatch) this.game.hud.feed(`<b style="color:${ONLINE_COLORS[color]}">${escHtml(name)}</b> <span>joined and fights next match</span>`);
+        this.admit(id, msg, group);
         break;
       }
       case 'pick':
@@ -231,6 +230,47 @@ export class NetSession {
         this.dropPeer(id, 'left');
         break;
     }
+  }
+
+  // Let a player or watcher into the lobby. `group` is their checked fundraising group (tournaments only).
+  admit(id, msg, group) {
+    const tourney = this.kind === 'tournament';
+    const used = new Set(this.lobby.members.map((m) => m.color));
+    const color = [...ONLINE_COLORS.keys()].find((c) => !used.has(c)) ?? 0;
+    const fighter = Number.isInteger(msg.fighter) && msg.fighter >= -1 && msg.fighter < ROSTER.length ? msg.fighter : -1;
+    let name = cleanName(msg.name);
+    const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
+    for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
+    const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
+    this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
+    if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
+    this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
+    if (tourney) {
+      this.transport.send(id, { t: 'chatlog', l: this.chat });
+      this.systemChat(role === 'player' ? `${name} joined for ${group}.` : `${name} is watching.`);
+    }
+    if (this.lobby.inMatch) this.transport.send(id, { t: 'start', spec: this.spec, you: -1 });
+    this.broadcastLobby();
+    if (this.lobby.inMatch) this.game.hud.feed(`<b style="color:${ONLINE_COLORS[color]}">${escHtml(name)}</b> <span>joined and fights next match</span>`);
+  }
+
+  // The group a fundraiser code belongs to: the admin's own list first, then the codes made in the
+  // José Madrid Salsa admin panel. Resolves to { name } or { why } (shown to the player).
+  async registeredGroup(typed) {
+    const local = findFundraiser(this.fundraisers, typed);
+    if (local) return { name: local.name };
+    const codeLike = /^JM[A-Z0-9]{8}$/.test(normFundraiserCode(typed));
+    if (codeLike) {
+      try {
+        const remote = await verifyFundraiserCode(typed);
+        if (remote) return { name: remote };
+      } catch {
+        return { why: 'The José Madrid Salsa site could not check your fundraiser code just now. Try again in a moment, or join to watch.' };
+      }
+    }
+    return { why: !codeLike
+      ? 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.'
+      : 'That fundraiser code is not registered. Check it with your organizer, or join to watch.' };
   }
 
   reject(id, reason) {
@@ -408,6 +448,7 @@ export class NetSession {
 
   dropPeer(id, why) {
     this.heard.delete(id);
+    this.pending?.delete(id);
     this.transport?.kick(id);
     const i = this.lobby.members.findIndex((m) => m.id === id);
     if (i < 0) return;

@@ -404,3 +404,16 @@ button { font: inherit; color: inherit; }
 }
 .chat-input:focus { background: rgba(255, 122, 42, 0.1); }
 @media (max-width: 700px) { #chat.overlay { height: 150px; } }
+
+/* fundraiser codes on the admin card */
+.t-codes { display: flex; flex-direction: column; gap: 6px; width: 100%; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+.t-codes-h { font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+.t-codes-help { font-size: 14px !important; line-height: 1.4; }
+.t-codes-add { display: flex; gap: 8px; align-items: stretch; }
+.t-codes-add input { flex: 1; min-width: 0; font-size: 16px; padding: 6px 10px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.18); color: var(--bone); font-family: inherit; }
+.t-codes-add .nav { font-size: 16px; white-space: nowrap; }
+.t-codes-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.t-code-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.t-code-row .g { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bone); }
+.t-code-row .code-chip { letter-spacing: 0.08em; }
+.t-code-row .nav, .t-codes-list > .nav { font-size: 14px; }

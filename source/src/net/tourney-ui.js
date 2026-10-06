@@ -4,7 +4,7 @@
 import { ROSTER } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { ONLINE_COLORS, cleanCode, cleanName, randomCode, saveOnlineSettings } from './session.js';
-import { TEAM_SIZES, teamsOf, nextMatch, roundName, describeStart, loadTournamentSettings, saveTournamentSettings, cleanText } from './tournament.js';
+import { TEAM_SIZES, teamsOf, nextMatch, roundName, describeStart, loadTournamentSettings, saveTournamentSettings, cleanText, cleanGroup, groupKey, fundraiserCode } from './tournament.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -34,6 +34,12 @@ export class TournamentMenus {
         saveTournamentSettings(this.settings);
       });
     }
+    this.groupInput = this.screen.querySelector('#t-group');
+    this.groupInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault(); e.stopPropagation();
+      this.onAct('t-addcode');
+    });
     this.nameInput.addEventListener('input', () => { session.settings.name = this.nameInput.value; saveOnlineSettings(session.settings); });
     this.codeInput.addEventListener('input', () => { const v = cleanCode(this.codeInput.value); if (v !== this.codeInput.value) this.codeInput.value = v; });
     // the admin's clock in the lobby header ticks once a minute
@@ -50,9 +56,10 @@ export class TournamentMenus {
       this.nameInput.value = this.session.settings.name || '';
       const group = this.menus.group;
       this.screen.querySelector('.t-myteam').innerHTML = group
-        ? `You fight for <b>${esc(group)}</b>. Teammates must type the same group on the title screen.`
+        ? `You fight for <b>${esc(group)}</b>. If the admin gave your group a fundraiser code, that code is what goes on the title screen.`
         : 'Enter your fundraising group on the title screen to fight. You can still watch.';
       this.renderOpts();
+      this.renderCodes();
       if (!this.busy) this.setStatus('');
     }
     if (name === 'tlobby') this.render(false);
@@ -69,9 +76,27 @@ export class TournamentMenus {
       opt('t-size', 'Fighters per team', t.teamSize),
       opt('t-wins', 'Rounds to win a match', t.wins),
       opt('t-fill', 'Short teams', t.fill ? 'CPU fills in' : 'Fight short'),
+      opt('t-reg', 'Who can fight', t.registration === 'open' ? 'Any group name' : 'Fundraiser code'),
     ].join('');
     const link = /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}?t=${t.code}` : '';
     this.screen.querySelector('.t-admin-code').innerHTML = `Your tournament code is <b class="code-chip">${t.code}</b>. Share it${link ? ` (or <span class="invite">${esc(link)}</span>)` : ''} with the teams before the day. <button class="nav link" data-act="t-newcode">New code</button>`;
+  }
+
+  // The admin's list of fundraising groups and their registration codes.
+  renderCodes(focusAct = null, focusCode = null) {
+    const groups = this.settings.groups;
+    this.screen.querySelector('.t-codes-help').textContent = this.settings.registration === 'open'
+      ? 'Who can fight is set to any group name, so codes are not checked. Switch it to Fundraiser code to require them.'
+      : 'Players fight with a fundraiser code typed on the title screen: one made here (saved in this browser, so host from here) or one made in the José Madrid Salsa admin panel. Anyone can watch.';
+    this.screen.querySelector('.t-codes-list').innerHTML = groups.map((g) => `<div class="t-code-row"><span class="g">${esc(g.name)}</span><b class="code-chip">${esc(g.code)}</b>` +
+      `<button class="nav link" data-act="t-copycode" data-id="${esc(g.code)}">Copy</button>` +
+      `<button class="nav link kick" data-act="t-delcode" data-id="${esc(g.code)}" title="Remove ${esc(g.name)}">✕</button></div>`).join('') +
+      (groups.length > 1 ? '<button class="nav link" data-act="t-copycodes">Copy all codes</button>' : '');
+    if (focusAct) (this.screen.querySelector(`.t-codes [data-act="${focusAct}"]${focusCode ? `[data-id="${focusCode}"]` : ''}`) || this.groupInput).focus({ preventScroll: true });
+  }
+
+  async copyText(text, done) {
+    try { await navigator.clipboard.writeText(text); this.setStatus(done); } catch { this.setStatus(text); }
   }
 
   onOpt(key, d) {
@@ -79,6 +104,7 @@ export class TournamentMenus {
     if (key === 't-size') t.teamSize = TEAM_SIZES[(TEAM_SIZES.indexOf(t.teamSize) + d + TEAM_SIZES.length) % TEAM_SIZES.length];
     else if (key === 't-wins') t.wins = ((t.wins - 1 + d + 3) % 3) + 1;
     else if (key === 't-fill') t.fill = !t.fill;
+    else if (key === 't-reg') { t.registration = t.registration === 'open' ? 'code' : 'open'; this.renderCodes(); }
     else if (key === 't-fighter') { this.session.pickFighter(d); this.render(true); return; }
     else return;
     saveTournamentSettings(t);
@@ -142,6 +168,40 @@ export class TournamentMenus {
       }
       case 't-next': s.startTournamentMatch(); return true;
       case 't-kick': s.kick(el?.dataset.id); return true;
+      case 't-addcode': {
+        const name = cleanGroup(this.groupInput.value);
+        const groups = this.settings.groups;
+        if (!name) { this.setStatus('Type the fundraising group\'s name first.', true); this.groupInput.focus(); return true; }
+        const old = groups.find((g) => groupKey(g.name) === groupKey(name));
+        if (old) { this.setStatus(`${old.name} already has code ${old.code}.`, true); this.groupInput.select(); return true; }
+        const code = fundraiserCode(groups.map((g) => g.code));
+        groups.push({ name, code });
+        saveTournamentSettings(this.settings);
+        this.groupInput.value = '';
+        this.renderCodes();
+        this.groupInput.focus({ preventScroll: true });
+        this.setStatus(`${name}'s fundraiser code is ${code}.`);
+        return true;
+      }
+      case 't-delcode': {
+        const groups = this.settings.groups;
+        const i = groups.findIndex((g) => g.code === el?.dataset.id);
+        if (i < 0) return true;
+        const [g] = groups.splice(i, 1);
+        saveTournamentSettings(this.settings);
+        this.renderCodes();
+        this.groupInput.focus({ preventScroll: true });
+        this.setStatus(`Removed ${g.name}'s code. Players using ${g.code} can no longer fight.`);
+        return true;
+      }
+      case 't-copycode': {
+        const g = this.settings.groups.find((x) => x.code === el?.dataset.id);
+        if (g) await this.copyText(`${g.name}: your José Madrid Salsa Battle Arena fundraiser code is ${g.code}. Type it in the Fundraising group box on the title screen.`, `Copied ${g.name}'s code.`);
+        return true;
+      }
+      case 't-copycodes':
+        await this.copyText(this.settings.groups.map((g) => `${g.name}: ${g.code}`).join('\n'), 'Copied every group\'s code.');
+        return true;
       case 't-chat': this.chat.open(); return true;
       case 't-leave':
         this.owns = false;

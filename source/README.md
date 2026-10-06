@@ -38,8 +38,14 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   win a match and whether CPUs fill short teams. Share the tournament code (or the `?t=CODE` link) with the teams ahead
   of time. The code is saved in the admin's browser, so the same code works on the day. At the agreed time press
   **Open tournament room**, wait for the teams, **Draw the bracket**, then **Start** each match.
-- **Teams**: enter the fundraising group on the title screen, open Tournament, type the code and press **Fight for my
-  group**. Pick your fighter in the lobby.
+- **Fundraiser codes**: by default (**Who can fight: Fundraiser code**) only players who type a fundraiser code on the
+  title screen can fight, and they join the team of the group the code belongs to; anyone can still watch. Codes come
+  from two places: the José Madrid Salsa admin panel (website or desktop app), which the host checks with
+  `POST https://www.josemadrid.net/api/arena/game-codes/verify`, or the **Fundraiser codes** list on the admin card
+  (type a group name, **Make code**; saved only in that browser). Set **Who can fight** to **Any group name** to skip
+  codes. `?codes-api=URL` points the check at another server for testing.
+- **Teams**: enter your fundraiser code (or, if the admin made none, your group's name) on the title screen, open
+  Tournament, type the tournament code and press **Fight for my group**. Pick your fighter in the lobby.
 - **Viewers**: type the code and press **Watch**. While watching, the arrow keys pick which fighter the camera follows
   and up shows the whole field.
 - **Chat**: press **T** in the lobby or during a match, Enter sends, Esc closes. The admin's messages are marked Admin,

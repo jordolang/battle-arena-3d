@@ -283,7 +283,7 @@ export class TournamentMenus {
     const me = s.me;
     const def = me && me.fighter >= 0 ? ROSTER[me.fighter] : null;
     el.querySelector('.t-me').innerHTML = me?.role === 'player'
-      ? `<div class="col-h">Your fighter</div><div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><button class="nav opt fighter" data-opt="t-fighter"><span class="fname">${def ? esc(def.name) : 'Random'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span></button></div>`
+      ? `<div class="col-h">Your fighter</div><div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><button class="nav opt fighter" data-opt="t-fighter" data-cs="t"><span class="fname">${def ? esc(def.name) : 'Random'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span></button></div>`
       : '';
 
     // the bracket

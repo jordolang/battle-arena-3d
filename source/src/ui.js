@@ -3,6 +3,7 @@ import { shareOnFacebook, shareAnywhere } from './share.js';
 import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BINDINGS, SPECIALS, SKILLS, keyLabel,
   TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
 import { saveBindings } from './input.js';
+import { wardrobe, lookSummary, SLOT_LABELS, RARITY } from './cosmetics.js';
 
 const SETUP_KEY = 'battle-arena.setup.v1';
 const GROUP_KEY = 'battle-arena.fundraiser-group.v1';
@@ -40,11 +41,11 @@ const CONTROLS = [0, 1, 2, 3, 'cpu'];
 const QUALITY = ['auto', 'high', 'low'];
 
 export class Menus {
-  constructor({ keyboard, bindings, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow }) {
+  constructor({ keyboard, bindings, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow, onSelect, onFavourite }) {
     this.kb = keyboard;
     this.bindings = bindings;
     this.setup = loadSetup();
-    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow };
+    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow, onSelect, onFavourite };
     this.active = null;
     this.back = {};
     this.rebinding = null;
@@ -151,6 +152,13 @@ export class Menus {
   }
 
   activate(el) {
+    // a fighter button opens the character select screen (left and right still flick through fighters)
+    // (data-cs is a slot number on the Versus CPU screen, or a name the online menus handle)
+    if (el.dataset.cs != null && this.select) {
+      if (/^\d+$/.test(el.dataset.cs)) this.openSlotSelect(+el.dataset.cs);
+      else this.cb.onSelect?.(el.dataset.cs, el);
+      return;
+    }
     if (el.dataset.opt) { this.change(el, 1); return; }
     if (el.dataset.act) this.runAct(el.dataset.act, el);
   }
@@ -175,7 +183,9 @@ export class Menus {
     const gated = act === 'net-host' || act === 'net-join' || act === 'net-queue' || act === 't-join-fight' ||
       (act === 'to-online' && this.active === 'title');
     if (gated && !this.requireGroup()) return;
+    if (act.startsWith('cs-')) { this.select?.onAct(act, el); return; }
     switch (act) {
+      case 'to-locker': this.openLocker(); break;
       case 'to-setup': this.show('setup'); break;
       case 'to-title': this.show('title'); break;
       case 'to-controls': this.controlsReturn = this.active; this.show('controls'); break;
@@ -212,6 +222,40 @@ export class Menus {
   }
 
   focusAct(act) { this.screens[this.active]?.querySelector(`[data-act="${act}"]`)?.focus(); }
+
+  // Character select for a slot on the Versus CPU screen. Slot 0 is you, with the wardrobe; the rest are CPUs.
+  openSlotSelect(i) {
+    const slot = this.setup.slots[i];
+    const you = i === 0;
+    this.select.open({
+      context: you ? 'Versus CPU' : `Versus CPU · opponent ${i}`,
+      heading: you ? 'Choose your fighter' : 'Choose a CPU fighter',
+      fighter: slot.fighter, wardrobe: you,
+      note: 'CPU fighters dress themselves, sometimes in gear you have not unlocked yet.',
+      confirm: (def) => (you ? (def ? `Fight as ${def.name}` : 'Fight as a random fighter') : (def ? `Send in ${def.name}` : 'Random CPU')),
+      onConfirm: (f) => { slot.fighter = f; saveSetup(this.setup); },
+      onClose: () => this.screens.setup.querySelector(`[data-cs="${i}"]`)?.focus({ preventScroll: true }),
+      back: 'setup',
+    });
+  }
+
+  // The locker room: browse every fighter and dress them; the one you confirm becomes your usual fighter.
+  openLocker() {
+    const back = this.active && this.active !== 'select' ? this.active : 'title';
+    const fav = wardrobe.favourite >= 0 ? wardrobe.favourite : Math.max(0, this.setup.slots[0].fighter);
+    this.select.open({
+      context: 'Locker room', heading: 'Fighters & outfits', fighter: fav, random: false,
+      confirm: (def) => `Make ${def.name} my fighter`,
+      onConfirm: (f) => {
+        wardrobe.favourite = f;
+        this.setup.slots[0].fighter = f;
+        saveSetup(this.setup);
+        this.cb.onFavourite?.(f);
+      },
+      onClose: () => this.focusAct('to-locker'),
+      back,
+    });
+  }
 
   // Fight is you (P1 keys) against CPU fighters, free-for-all.
   buildMatchSetup() {
@@ -281,6 +325,7 @@ export class Menus {
     slots.innerHTML = s.slots.slice(0, s.count).map((slot, i) => {
       const def = slot.fighter >= 0 ? ROSTER[slot.fighter] : null;
       const who = i === 0 ? 'You' : 'CPU';
+      const dress = i === 0 && def ? lookSummary(wardrobe.lookFor(slot.fighter)) : '';
       const whoColor = i === 0 ? `style="color:${PLAYER_COLORS[0]}"` : '';
       const sw = def ? hex(def.eyes) : '#888';
       const t = tc ? slot.team % tc : -1;
@@ -288,15 +333,15 @@ export class Menus {
       return `<div class="slot" style="--fc:${sw}">
         <span class="slot-n">${i + 1}</span>
         <div class="who"><span ${whoColor}>${who}</span></div>
-        <button class="nav opt fighter" data-opt="fighter" data-i="${i}">
+        <button class="nav opt fighter" data-opt="fighter" data-i="${i}" data-cs="${i}">
           <span class="fname">${def ? esc(def.name) : 'Random'}</span>
-          <span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
+          <span class="ftitle">${dress ? `<em class="dress">${esc(dress)}</em> · ` : ''}${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
         </button>${teamBtn}
       </div>`;
     }).join('');
     slots.classList.toggle('teamed', !!tc);
     this.screens.setup.querySelector('.setup-note').textContent =
-      `You against ${s.count - 1} CPU ${s.count === 2 ? 'fighter' : 'fighters'}, last one standing takes the round. Grab the power-ups and hit them from behind.`;
+      `You against ${s.count - 1} CPU ${s.count === 2 ? 'fighter' : 'fighters'}, last one standing takes the round. Press Enter on a fighter to see them up close and change their outfit.`;
   }
 
   updateTeamLabels() {
@@ -365,10 +410,23 @@ export class Menus {
     const sorted = [...fighters].sort((a, b) => (teamed ? (b.team === champ.team) - (a.team === champ.team) : 0) ||
       b.stats.wins - a.stats.wins || b.stats.kos - a.stats.kos || b.stats.damage - a.stats.damage);
     el.querySelector('thead').innerHTML = `<tr><th>Fighter</th><th>Played by</th>${teamed ? '<th>Team</th>' : ''}<th>Rounds</th><th>KOs</th><th>Damage</th></tr>`;
+    this.renderUnlocks();
     el.querySelector('tbody').innerHTML = sorted.map((f) => `<tr>
       <td><i class="sw" style="background:${hex(f.def.eyes)}"></i>${esc(f.name)}</td>
       <td>${esc(f.label)}</td>${teamed ? `<td style="color:${hex(f.teamColor ?? 0xffffff)}">${esc(f.teamName)}</td>` : ''}<td>${f.stats.wins}</td><td>${f.stats.kos}</td><td>${Math.round(f.stats.damage)}</td></tr>`).join('');
     this.show('results');
+  }
+
+  // Items the last match unlocked, shown on the results screen (set by main.js when a match ends).
+  renderUnlocks() {
+    const box = this.screens.results.querySelector('.unlocks');
+    const list = this.newUnlocks || [];
+    this.newUnlocks = [];
+    box.hidden = !list.length;
+    if (!list.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="unlocks-h">New in your locker</div><div class="unlocks-list">${list.map(({ slot, item }) =>
+      `<span class="unlock" style="--rc:${RARITY[item.rarity].color}"><b>${esc(item.label)}</b> ${esc(SLOT_LABELS[slot].toLowerCase())}</span>`).join('')}</div>
+      <button class="nav link" data-act="to-locker">Try it on in the locker room</button>`;
   }
 }
 

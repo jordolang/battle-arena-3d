@@ -5,10 +5,12 @@ import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
 import { initAudio } from './audio.js';
-import { NetSession, cleanCode } from './net/session.js';
+import { NetSession, cleanCode, saveOnlineSettings } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
 import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
+import { CharacterSelect } from './charSelect.js';
+import { wardrobe } from './cosmetics.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -44,7 +46,11 @@ function boot() {
     onAct: (act, el) => { audio.unlock(); online?.onAct(act, el); },
     onOpt: (key, el, d) => online?.onOpt(key, el, d),
     onShow: (name) => online?.onShow(name),
+    onSelect: (key) => online?.openSelect(key),
+    // the locker's "make this my fighter" also becomes your pick online
+    onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
   });
+  menus.select = new CharacterSelect({ menus });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
@@ -53,7 +59,19 @@ function boot() {
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
 
+  // Your match counts toward unlocking outfits: P1 on this keyboard, or your own fighter online.
+  const recordMatch = (champ, fighters) => {
+    const me = game.online ? game.localFighter
+      : fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0];
+    if (!me || game.mode !== 'match') return [];
+    const won = champ === me || (champ && champ.team >= 0 && champ.team === me.team);
+    const fresh = wardrobe.recordMatch({ won, rounds: me.stats.wins, kos: me.stats.kos });
+    if (fresh.length && session.kind === 'tournament') game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    return fresh;
+  };
+
   game.onMatchEnd = (champ, fighters) => {
+    menus.newUnlocks = recordMatch(champ, fighters);
     // tournament matches go back to the bracket instead of the results screen
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
     setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
@@ -117,7 +135,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio };
+  window.__arena = { game, menus, events, bindings, session, audio, wardrobe };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

@@ -509,3 +509,127 @@ button { font: inherit; color: inherit; }
 .belt-toast span { font-size: 13px; color: var(--bone); }
 #belts.compact .belt-toast b { font-size: 18px; }
 @media (max-width: 720px) { .belt { --orb: 60px; --slot: 38px; } .belt-keys { display: none; } }
+
+/* ---------- Character select & locker room ---------- */
+#screen-select { padding: 16px; }
+.cs {
+  width: min(1320px, 100%); height: min(860px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px;
+  padding: 18px 22px; background: var(--plate); border: 1px solid var(--plate-edge); border-radius: 4px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px);
+}
+.cs-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.cs-head h2 { font-family: var(--display); font-weight: 400; font-size: 40px; margin: 0; line-height: 1.05; }
+.cs-record { display: flex; gap: 16px; flex-wrap: wrap; color: var(--ash); font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; }
+.cs-record b { color: var(--bone); font-size: 20px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.cs-record .cs-owned b { color: var(--gold); }
+.cs-body { display: grid; grid-template-columns: 236px minmax(0, 1fr) minmax(300px, 400px); gap: 16px; min-height: 0; }
+.cs-roster { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; overflow-y: auto; padding: 2px; }
+.cs-card {
+  --fc: #fff; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 7px; text-align: center;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07); border-bottom: 2px solid transparent; border-radius: 3px;
+}
+.cs-card .cs-portrait {
+  width: 74px; height: 74px; border-radius: 50%; object-fit: cover; background: radial-gradient(circle at 50% 35%, #3a2a28, #120d0e 70%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08); display: grid; place-items: center;
+}
+.cs-card .cs-portrait.q { font-family: var(--display); font-size: 44px; color: var(--ash); }
+.cs-cname { font-weight: 700; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fc); line-height: 1.1; }
+.cs-role { font-size: 12px; color: var(--ash); letter-spacing: 0.1em; text-transform: uppercase; }
+.cs-card:focus, .cs-card:hover { background: rgba(255, 122, 42, 0.08); border-color: color-mix(in srgb, var(--fc) 50%, transparent); }
+.cs-card.on { border-bottom-color: var(--fc); background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), color-mix(in srgb, var(--fc) 16%, transparent)); }
+.cs-card.on .cs-portrait { box-shadow: inset 0 0 0 2px var(--fc), 0 0 18px color-mix(in srgb, var(--fc) 45%, transparent); }
+
+.cs-stage {
+  --fc: #ff7a2a; position: relative; min-height: 0; border-radius: 4px; overflow: hidden;
+  background: radial-gradient(ellipse 60% 55% at 50% 42%, color-mix(in srgb, var(--fc) 22%, #1a1214), #0b0809 75%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.cs-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.cs-canvas:active { cursor: grabbing; }
+.cs-plate { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; flex-direction: column; align-items: center; pointer-events: none; text-shadow: 0 2px 8px #000; }
+.cs-name { font-family: var(--display); font-size: clamp(40px, 5vw, 64px); line-height: 1; color: var(--bone); }
+.cs-title { font-size: 15px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--fc); }
+.cs-turn { position: absolute; top: 10px; right: 12px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ash); opacity: 0.7; pointer-events: none; }
+
+.cs-side { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.cs-badge { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--basalt); background: var(--ember); padding: 2px 8px; border-radius: 2px; }
+.cs-stats { display: grid; gap: 5px; margin: 8px 0 6px; }
+.cs-stat { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 8px; font-size: 14px; color: var(--ash); text-transform: uppercase; letter-spacing: 0.08em; }
+.cs-bar { height: 7px; background: rgba(255, 255, 255, 0.07); border-radius: 1px; overflow: hidden; }
+.cs-bar i { display: block; height: 100%; background: linear-gradient(90deg, #b97a14, var(--gold)); transition: width 0.35s ease; }
+.cs-moves { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.cs-moves li { display: flex; flex-direction: column; border-left: 2px solid rgba(255, 122, 42, 0.4); padding-left: 8px; }
+.cs-moves b { font-weight: 600; letter-spacing: 0.04em; color: var(--bone); }
+.cs-moves span { color: var(--ash); font-size: 13px; }
+.cs-blurb { color: var(--ash); font-size: 15px; margin: 0; line-height: 1.4; }
+
+.cs-wardrobe { border-top: 1px solid rgba(255, 255, 255, 0.07); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cs-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.cs-tab {
+  text-align: center; padding: 6px 2px; font-weight: 600; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ash);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+}
+.cs-tab.on { color: var(--bone); border-bottom-color: var(--ember); }
+.cs-tab:focus, .cs-tab:hover { color: var(--bone); background: rgba(255, 122, 42, 0.08); }
+.cs-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.cs-item {
+  --rc: #ccc; position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 4px 8px; text-align: center;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07); border-top: 2px solid var(--rc); border-radius: 3px; min-width: 0;
+}
+.cs-item:focus, .cs-item:hover { background: color-mix(in srgb, var(--rc) 14%, transparent); border-color: var(--rc); }
+.cs-item.worn { box-shadow: inset 0 0 0 2px var(--rc); }
+.cs-item.worn::after { content: '✓'; position: absolute; top: 3px; right: 5px; font-size: 12px; color: var(--rc); font-weight: 700; }
+.cs-item.locked .cs-swatch, .cs-item.locked .cs-ico { filter: saturate(0.55) brightness(0.6); }
+.cs-item.locked .cs-iname { color: var(--ash); }
+.cs-item.nope { animation: fr-shake 0.4s ease; }
+.cs-iname { font-size: 12px; font-weight: 600; line-height: 1.15; letter-spacing: 0.04em; color: var(--bone); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cs-lock { position: absolute; top: 4px; left: 5px; font-size: 11px; opacity: 0.8; }
+.cs-swatch {
+  width: 40px; height: 40px; border-radius: 50%; position: relative; overflow: hidden;
+  background: conic-gradient(var(--a) 0 55%, var(--b) 55% 85%, var(--c) 85% 100%); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.4);
+}
+.cs-swatch.fin-metal::after, .cs-swatch.fin-gold::after { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, transparent 30%, rgba(255, 255, 255, 0.55) 48%, transparent 62%); }
+.cs-swatch.fin-glow { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.4), 0 0 12px var(--b); }
+.cs-ico { width: 40px; height: 40px; display: grid; place-items: center; color: var(--rc); }
+.cs-ico svg { width: 30px; height: 30px; }
+.cs-prog { position: absolute; left: 6px; right: 6px; bottom: 3px; height: 3px; background: rgba(255, 255, 255, 0.08); border-radius: 2px; overflow: hidden; }
+.cs-prog i { display: block; height: 100%; background: var(--rc); }
+.cs-detail { min-height: 74px; padding: 8px 10px; background: rgba(0, 0, 0, 0.3); border-left: 2px solid var(--ember); }
+.cs-dname { --rc: #ccc; font-weight: 700; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rc); }
+.cs-dname small { font-size: 11px; letter-spacing: 0.2em; margin-left: 6px; opacity: 0.85; }
+.cs-detail p { margin: 2px 0 0; font-size: 14px; color: var(--ash); }
+.cs-detail .cs-state { color: var(--bone); font-weight: 600; }
+.cs-detail .cs-state.locked { color: #ffb08a; }
+.cs-actions { margin-top: 0; align-items: center; }
+.cs-msg { color: #ffb08a; font-size: 15px; font-weight: 600; }
+.ftitle .dress { font-style: normal; color: var(--gold); }
+
+.unlocks { margin: 0 0 14px; padding: 10px 14px; border-left: 3px solid var(--gold); background: rgba(255, 200, 97, 0.07); }
+.unlocks-h { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 6px; }
+.unlocks-list { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 6px; }
+.unlock { --rc: #ccc; font-size: 15px; color: var(--ash); }
+.unlock b { color: var(--rc); letter-spacing: 0.04em; }
+
+@media (max-width: 980px) {
+  #screen-select { padding: 0; align-items: stretch; }
+  .cs { height: auto; min-height: 100%; border-radius: 0; padding: 14px 14px 18px; grid-template-rows: auto auto auto; }
+  .cs-body { grid-template-columns: minmax(0, 1fr); }
+  .cs-roster { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 92px; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
+  .cs-card .cs-portrait { width: 60px; height: 60px; }
+  .cs-stage { height: min(52vh, 460px); }
+  .cs-side { overflow: visible; }
+  .cs-head h2 { font-size: 32px; }
+}
+.cs-body-opts { display: flex; flex-direction: column; gap: 8px; }
+.cs-orow { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 8px; }
+.cs-olabel { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); }
+.cs-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.cs-opt {
+  min-width: 32px; height: 32px; padding: 0 6px; display: grid; place-items: center; border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.cs-opt:focus, .cs-opt:hover { border-color: var(--ember); background: rgba(255, 122, 42, 0.12); }
+.cs-opt.worn { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.cs-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--d); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.cs-dot.own { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.cs-otext { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }

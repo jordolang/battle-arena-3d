@@ -53,6 +53,7 @@
         <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
+        <button class="nav big" data-act="to-locker">Locker room <small>fighters &amp; outfits</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
       </div>
       <div class="share-row">
@@ -84,6 +85,28 @@
         <button class="nav big" data-act="to-controls">Controls</button>
         <button class="nav big" data-act="to-title">Back</button>
       </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-select" data-back="cs-cancel" hidden>
+    <div class="cs">
+      <header class="cs-head">
+        <div><div class="eyebrow cs-context"></div><h2>Choose your fighter</h2></div>
+        <div class="cs-record"></div>
+      </header>
+      <div class="cs-body">
+        <div class="cs-roster"></div>
+        <div class="cs-stage">
+          <canvas class="cs-canvas"></canvas>
+          <div class="cs-plate"><span class="cs-name"></span><span class="cs-title"></span></div>
+          <div class="cs-turn">Drag to turn</div>
+        </div>
+        <div class="cs-side">
+          <div class="cs-info"></div>
+          <div class="cs-wardrobe"></div>
+        </div>
+      </div>
+      <div class="actions cs-actions"></div>
     </div>
   </section>
 
@@ -257,6 +280,7 @@
       <div class="eyebrow">Champion of the arena</div>
       <div class="champ"></div>
       <p class="champ-sub"></p>
+      <div class="unlocks" hidden></div>
       <div class="table-wrap">
         <table class="results-table">
           <thead><tr><th>Fighter</th><th>Played by</th><th>Rounds</th><th>KOs</th><th>Damage</th></tr></thead>

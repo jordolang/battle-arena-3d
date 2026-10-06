@@ -11,6 +11,7 @@ import { CameraRig } from './camera.js';
 import { AIController } from './ai.js';
 import { HumanController } from './input.js';
 import { Hud } from './hud.js';
+import { wardrobe, randomLook } from './cosmetics.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -228,7 +229,7 @@ export class Game {
     this.rig.follow = null;
     this.applyRules({ mode: 'cpu' });
     const ids = [...ROSTER.keys()].sort(() => Math.random() - 0.5).slice(0, 6);
-    this.fighters = ids.map((i, k) => new Fighter(ROSTER[i], k, new AIController('normal')));
+    this.fighters = ids.map((i, k) => new Fighter(ROSTER[i], k, new AIController('normal'), randomLook()));
     for (const f of this.fighters) this.scene.add(f.model.root);
     this.setup = { winsNeeded: 99, suddenDeath: 50 };
     this.beginRound(true);
@@ -245,11 +246,13 @@ export class Game {
     this.keyboard.captureGameKeys = true;
     this.applyRules(setup);
     this.fighters = setup.slots.map((s, i) => {
-      const def = ROSTER[s.fighter < 0 ? Math.floor(Math.random() * ROSTER.length) : s.fighter];
+      const index = s.fighter < 0 ? Math.floor(Math.random() * ROSTER.length) : s.fighter;
       const ctrl = s.control === 'cpu'
         ? new AIController(setup.difficulty)
         : new HumanController(this.keyboard, bindings[s.control], s.control);
-      return new Fighter(def, i, ctrl);
+      // people wear what they picked in the wardrobe, CPUs dress themselves
+      const look = s.look && typeof s.look === 'object' ? s.look : s.control === 'cpu' ? randomLook() : wardrobe.lookFor(index);
+      return new Fighter(ROSTER[index], i, ctrl, look);
     });
     this.applyTeams(setup.teams, setup.slots.map((s) => s.team));
     for (const f of this.fighters) f.setDurability(this.rules.durability);
@@ -308,7 +311,7 @@ export class Game {
     this.paused = false;
     this.applyRules(spec.setup);
     this.fighters = spec.fighters.map((s, i) => {
-      const f = new Fighter(ROSTER[s.def], i, controllers ? controllers[i] : null);
+      const f = new Fighter(ROSTER[s.def], i, controllers ? controllers[i] : null, s.look);
       f.netName = s.pname || null;
       f.netColor = s.color || null;
       f.isYou = i === you;

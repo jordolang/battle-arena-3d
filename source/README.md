@@ -138,12 +138,42 @@ Sudden death (default 75 s) brings in a closing ring of fire.
 
 Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dodge out of it in time.
 
+## Character select, clothing and the locker room
+- **Character select** opens from the Versus CPU screen (Enter on a fighter), from your seat in an online room or the
+  queue, and from your fighter in a tournament lobby. It shows every fighter with a portrait, a turning 3D preview on a
+  pedestal (drag to turn), their health, power and speed, their special and skills, and the wardrobe.
+- **Locker room** (title screen) is the same screen for browsing and dressing all eight fighters. The one you confirm
+  becomes your usual fighter, offline and online.
+- **Clothing** is real clothing, worn over the body and moving with it: tops (Arena Tee, Tank Top, Hoodie, Serape
+  Poncho, Salsa Chef Apron, Biker Jacket, Charro Jacket, José Madrid Tee, Suit of Lights), pants (Fight Shorts, Jeans,
+  Cargo Pants, Charro Trousers, José Madrid Joggers, Gold Breeches), shoes (High-tops, Huaraches, Cowboy Boots, Golden
+  Boots) and gloves (Fight Gloves, Boxing Gloves, Iron Gauntlets, Salsa Chef Mitts). On top of that: colour schemes
+  (Salsa Roja, Salsa Verde, Chipotle Smoke, Mango Habanero, Ghost Pepper, Golden Jar and more) that dye the gi and any
+  dyeable clothes, headgear (Bandana, Luchador Mask, Sombrero, Rider's Hat & Mask, Crown of Chilies, Salsa King Crown),
+  back pieces (Battle Cape, Chili Banner, Salsa Jar Pack, José Madrid Standard, Golden Mantle) and victory poses
+  (Fist to the Sky, Salsa Step, Double Flex, Come On Then, Matador's Bow). Hovering an item tries it on; Enter wears it.
+  Every fighter keeps their own look. Clothes are looks only: they never change how a fighter plays.
+- **Body** (first wardrobe tab): skin tone, hair style (bald, short, long, top knot, mohawk, spiky, braids), hair colour,
+  beard on or off and eye glow, each defaulting to the fighter's own. Body options are always free.
+- **Unlocks**: some items are free; the rest unlock from your record (matches finished, matches won, rounds won,
+  knockouts), and the José Madrid pieces need a fundraising group on the title screen. New unlocks are listed on the
+  results screen. CPU fighters dress themselves, sometimes in gear you have not earned yet.
+- **Online**: your saved looks travel with you (`hello` and `pick` carry them; the host puts each fighter's look in the
+  match spec), so everyone sees what you wear. Protocol is now 6.
+- **Storage and profiles**: the wardrobe (record, looks, usual fighter) is kept in this browser under
+  `battle-arena.wardrobe.v1`. Player profiles take it over with `wardrobe.connectProfile(adapter)` in `src/cosmetics.js`:
+  the adapter can supply the account's stats, items granted outright, fundraiser membership and saved looks, and
+  receives finished matches and wardrobe changes.
+
 ## Code map (`src/`)
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
   (sculpted faces, hair, hands and muscled limbs merged per material), poses, breathing, blinking and gaze
 - `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
 - `items.js` weapon, gun and armor meshes and the ability bar icons
+- `cosmetics.js` clothing, colour schemes, headgear, back pieces and victory poses, unlock rules and the wardrobe ·
+  `wardrobeModels.js` the 3D clothing and accessories · `bodyShapes.js` limb profiles shared by bodies and clothes ·
+  `charSelect.js` the character select and locker room screen
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding

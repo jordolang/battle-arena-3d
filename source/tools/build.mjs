@@ -23,6 +23,8 @@ body = body.replace(/src="(assets\/[\w.-]+\.(webp|png|jpe?g))"/g, (_, file, ext)
   `src="data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${readFileSync(join(root, file)).toString('base64')}"`);
 // (the vendor script tag sits outside the BODY markers, so only the inlined copy ships)
 const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Grenze+Gotisch:wght@500&display=swap">';
+// link-preview tags (Facebook, Messenger, texts) only matter on the hosted page, not the Artifact copy
+const og = html.split('<!--OG-START-->')[1].split('<!--OG-END-->')[0].trim();
 const head = `<title>José Madrid Salsa Battle Arena</title>\n${fonts}\n<style>\n${css}\n</style>`;
 // PeerJS (MIT, see vendor/peerjs-LICENSE) is a classic script that defines window.peerjs for src/net/transport.js
 const peerjs = readFileSync(join(root, 'vendor/peerjs.min.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
@@ -30,6 +32,6 @@ const script = `<script>\n${peerjs}\n</script>\n<script type="module">\n${js}\n<
 
 mkdirSync(join(root, 'dist'), { recursive: true });
 writeFileSync(join(root, 'dist/battle-arena.html'),
-  `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<link rel="icon" href="data:,">\n${head}\n</head>\n<body>\n${body}\n${script}\n</body>\n</html>\n`);
+  `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<link rel="icon" href="data:,">\n${og}\n${head}\n</head>\n<body>\n${body}\n${script}\n</body>\n</html>\n`);
 writeFileSync(join(root, 'dist/artifact.html'), `${head}\n${body}\n${script}\n`);
 console.log(`built: ${(js.length / 1024).toFixed(0)} KB of script`);

@@ -2,6 +2,7 @@
 // menu and the results buttons. Plugs into Menus through its onAct/onOpt/onShow hooks.
 import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
 import { moveSummary } from '../ui.js';
+import { shareOnFacebook } from '../share.js';
 import { ONLINE_COLORS, MAX_PLAYERS, cleanCode, cleanName, saveOnlineSettings } from './session.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -100,6 +101,7 @@ export class OnlineMenus {
         } finally { this.busy = false; }
         break;
       }
+      case 'net-invite-fb': if (s.lobby?.code) shareOnFacebook({ room: s.lobby.code }); break;
       case 'net-invite': {
         const link = this.inviteLink();
         try { await navigator.clipboard.writeText(link); this.flashShare('Invite link copied. Send it to your friends.'); } catch { this.flashShare(link); }
@@ -251,7 +253,7 @@ export class OnlineMenus {
       : `${humans} ${humans === 1 ? 'player' : 'players'} in the room${count > humans ? `, ${count - humans} CPU` : ''}. Up to ${MAX_PLAYERS} people can join.`;
     el.querySelector('.net-actions').dataset.mode = '';
     el.querySelector('.net-actions').innerHTML = s.isHost
-      ? '<button class="nav big primary" data-act="net-start">Begin the fight</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Close room</button>'
+      ? '<button class="nav big primary" data-act="net-start">Begin the fight</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Close room</button>'
       : '<span class="waiting">Waiting for the host…</span><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave room</button>';
 
     if (focusKey) {
@@ -291,7 +293,7 @@ export class OnlineMenus {
     const actions = el.querySelector('.net-actions');
     if (actions.dataset.mode !== 'queue') {
       actions.dataset.mode = 'queue';
-      actions.innerHTML = '<button class="nav big primary" data-act="net-invite">Copy invite link</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave queue</button>';
+      actions.innerHTML = '<button class="nav big primary" data-act="net-invite">Copy invite link</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave queue</button>';
     }
     if (focusKey) [...el.querySelectorAll('.nav')].find((x) => `${x.dataset.opt || ''}|${x.dataset.act || ''}` === focusKey)?.focus({ preventScroll: true });
   }

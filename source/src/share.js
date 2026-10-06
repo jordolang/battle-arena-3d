@@ -6,8 +6,13 @@
 export const GAME_URL = 'https://battle-arena-3d-mauve.vercel.app/';
 const HASHTAG = '#JoseMadridBattleArena';
 
+// The José Madrid Salsa fundraising site serves the game at /battle-arena and its share page at
+// /battle-arena/share; the game's own deployment serves them at / and /api/share.
+const ON_SITE = location.protocol === 'https:' && /(^|\.)josemadrid(salsa)?\.(net|com)$/.test(location.hostname);
+
 // The deployed site, or the public game when playing from a file or the Claude preview.
 function siteRoot() {
+  if (ON_SITE) return `${location.origin}/battle-arena`;
   return /^https?:$/.test(location.protocol) && !/^(localhost|127\.|\[?::1)/.test(location.hostname)
     ? `${location.origin}/` : GAME_URL;
 }
@@ -24,7 +29,7 @@ export function shareLink({ result, room } = {}) {
     if (result.team) q.set('team', '1');
   }
   if (room) q.set('room', room);
-  return `${siteRoot()}api/share?${q}`;
+  return ON_SITE ? `${siteRoot()}/share?${q}` : `${siteRoot()}api/share?${q}`;
 }
 
 export function shareText({ result, room } = {}) {

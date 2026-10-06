@@ -67,11 +67,11 @@ export class Hud {
         <div class="bar st"><div class="fill"></div></div>${chips}`;
       this.cardsEl.appendChild(card);
       const tag = document.createElement('div');
-      tag.className = 'tag' + (f.isPlayer ? ' human' : '') + (f.isYou ? ' you' : '');
+      tag.className = 'tag' + (f.isPlayer ? ' human' : '') + (f.isYou ? ' you' : '') + (f.reward ? ` reward${f.reward}` : '');
       tag.style.setProperty('--fc', whoColor || color);
       if (f.teamColor != null) tag.style.setProperty('--tc', hex(f.teamColor));
       if (teams && f.team >= 0) tag.classList.add('teamed');
-      tag.innerHTML = `<span>${f.isYou ? 'You' : f.isPlayer ? esc(who) : esc(f.name)}</span><div class="mini"><div></div></div>`;
+      tag.innerHTML = `<span>${f.reward ? (f.reward === 2 ? '♛ ' : '❦ ') : ''}${f.isYou ? 'You' : f.isPlayer ? esc(who) : esc(f.name)}</span><div class="mini"><div></div></div>`;
       this.tagsEl.appendChild(tag);
       return {
         f, card, tag,

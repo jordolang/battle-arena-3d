@@ -4,6 +4,8 @@ A 3D last-one-standing brawler in Three.js with three ways to play:
 - **Fight**: you against 1 to 7 CPU fighters in the coliseum.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
+- **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
+  guns and spells) and a free practice room, both against a training dummy that cannot be knocked out.
 
 Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
 Power-ups, backstabs, parries and (in tournaments) friendly fire and revives make positioning and teamwork matter.
@@ -27,6 +29,29 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   `POST https://www.josemadrid.net/api/arena/game-codes/verify` before queueing, and the host checks every player who
   joins again, so a group name or a revoked code can't get in.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
+- **Donate to your team**: under the group field the title screen shows the group's fundraiser from the José Madrid
+  Salsa fundraising site: how much it has raised toward its goal and a **Donate to (group)** button that opens the
+  group's own page (`https://fundraising.josemadrid.net/fundraise/<slug>`) in a new tab, where the site takes the
+  donation. The game never handles payments. The group is matched by its name, its school or its page name; a fundraiser
+  code is first turned into its group's name. A group that isn't found gets **Find your group** (the site's group list).
+  The results screen has the same button.
+- **Goal rewards (cosmetic only)**: a group that has raised half its goal unlocks the **Silver Laurel** (a silver laurel
+  wreath and a silver ring round the fighter's floor marker); at the full goal, the **Golden Crown** (a golden crown,
+  a gold ring and gold-glinting trim). The player's fighter wears it versus the CPU, online and in tournaments, and
+  its name tag gets a ❦ or ♛. Rewards change nothing about how a fighter plays.
+- Where the numbers come from: `api/fundraisers.js` (a Vercel function next to `api/share.js`) reads this month's team
+  standings from the fundraising site's public arena snapshot (`/api/fundraiser/arena/<YYYY-MM>/state`, the same data its
+  spectator arena shows) and passes on each team's name, page, goal and amount raised, cached for a minute. The hosted game
+  asks it at `/api/fundraisers`; the single-file copy asks the hosted one. `?fundraisers-api=URL` points at another
+  copy for testing, and the `FUNDRAISING_SITE_URL` environment variable moves the function to another fundraising site.
+
+## Training
+- The tutorial shows one lesson at a time in a panel on the left and moves on when you have done it (Tab skips a lesson).
+  The dummy stands still, holds its guard or throws slow punches, depending on the lesson.
+- The practice room shows your last hit, the current combo and your best combo. Tab changes what the dummy does,
+  G lays out two pieces of gear at a time, R puts you both back in the middle. Mana refills itself there.
+- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, button names on a gamepad, on-screen
+  button names on a touch screen. Gamepad and touch controls replace the placeholder labels with `registerPromptDevice()`.
 
 ## Fight online: the 30-second queue
 - Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;

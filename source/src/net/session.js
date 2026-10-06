@@ -10,6 +10,7 @@ import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
+import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
 export const PROTOCOL = 6;
@@ -173,7 +174,7 @@ export class NetSession {
     this.lobby = {
       code, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0, role: admin ? 'admin' : 'player', group: '' }],
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
     };
     if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
     if (admin) {
@@ -260,7 +261,8 @@ export class NetSession {
     const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
     for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
     const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
-    this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
+    // reward: the cosmetic their fundraising group earned by reaching its goal (fundraiser.js)
+    this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
     if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
     this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
     if (tourney) {
@@ -402,7 +404,7 @@ export class NetSession {
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const fighters = [];
     [pa, pb].forEach((list, side) => {
-      for (const mem of list) fighters.push({ def: pick(mem.fighter), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side });
+      for (const mem of list) fighters.push({ def: pick(mem.fighter), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side, reward: mem.reward || 0 });
       for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), pname: null, color: null, owner: null, team: side });
     });
     t.current = { r: m.r, i: m.i, a: m.a, b: m.b };
@@ -539,7 +541,7 @@ export class NetSession {
     const count = Math.max(rules.count, members.length, 2);
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const tc = rules.teams || 0;
-    const fighters = members.map((m) => ({ def: pick(m.fighter), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1 }));
+    const fighters = members.map((m) => ({ def: pick(m.fighter), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1, reward: m.reward || 0 }));
     while (fighters.length < count) {
       const cpu = { def: pick(-1), pname: null, color: null, owner: null, team: -1 };
       if (tc) {
@@ -553,7 +555,7 @@ export class NetSession {
     this.launch({ setup: { mode: rules.mode || 'queue', winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
   }
 
-  // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team }], label?, watchHint? }.
+  // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team, reward }], label?, watchHint? }.
   launch(spec) {
     const { rules, members } = this.lobby;
     const fighters = spec.fighters;
@@ -660,7 +662,7 @@ export class NetSession {
     transport.onMessage = (id, msg) => this.clientReceive(msg);
     transport.onHostLost = () => this.leave('Lost the connection to the host.');
     this.chat = [];
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group), fc: this.fundraiserCode });
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
     this.hostHeard = performance.now();
     let lastTick = performance.now();
     this.pingTimer = setInterval(() => {

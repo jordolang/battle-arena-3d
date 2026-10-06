@@ -9,6 +9,7 @@ import { NetSession, cleanCode } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
 import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
+import { Training } from './training.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -25,10 +26,12 @@ function boot() {
   const audio = initAudio(events, { getCamera: () => game.rig.camera });
   let online = null;
   let session = null;
+  let training = null;
 
   const menus = new Menus({
     keyboard, bindings,
     onStart: (setup) => {
+      training.stop();
       lastSetup = setup;
       online?.localMatch();
       audio.unlock();
@@ -37,14 +40,21 @@ function boot() {
       game.startMatch(setup, bindings);
     },
     onResume: () => { menus.hideAll(); game.setPaused(false); },
-    onRestart: () => { menus.hideAll(); game.setPaused(false); for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
-    onQuit: () => { audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
+    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
+    onQuit: () => { training.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
     onVolumeChange: (v) => audio.setVolumes(v),
-    onAct: (act, el) => { audio.unlock(); online?.onAct(act, el); },
-    onOpt: (key, el, d) => online?.onOpt(key, el, d),
-    onShow: (name) => online?.onShow(name),
+    onAct: (act, el) => {
+      audio.unlock();
+      // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
+      if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
+      if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
+      online?.onAct(act, el);
+    },
+    onOpt: (key, el, d) => (key === 'tr-fighter' ? training.changeFighter(d) : online?.onOpt(key, el, d)),
+    onShow: (name) => { if (name === 'training') training.renderMenu(); online?.onShow(name); },
   });
+  training = new Training({ game, menus, bindings, keyboard, events });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
@@ -117,7 +127,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio };
+  window.__arena = { game, menus, events, bindings, session, audio, training };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

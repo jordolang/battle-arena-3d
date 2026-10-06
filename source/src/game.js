@@ -8,7 +8,7 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
 import { CameraRig } from './camera.js';
-import { AIController } from './ai.js';
+import { AIController, DummyController } from './ai.js';
 import { HumanController } from './input.js';
 import { Hud } from './hud.js';
 
@@ -246,10 +246,13 @@ export class Game {
     this.applyRules(setup);
     this.fighters = setup.slots.map((s, i) => {
       const def = ROSTER[s.fighter < 0 ? Math.floor(Math.random() * ROSTER.length) : s.fighter];
-      const ctrl = s.control === 'cpu'
-        ? new AIController(setup.difficulty)
+      const ctrl = s.control === 'cpu' ? new AIController(setup.difficulty)
+        : s.control === 'dummy' ? new DummyController()
         : new HumanController(this.keyboard, bindings[s.control], s.control);
-      return new Fighter(def, i, ctrl);
+      const f = new Fighter(def, i, ctrl);
+      if (ctrl.name) f.name = ctrl.name;
+      f.setReward(s.reward);
+      return f;
     });
     this.applyTeams(setup.teams, setup.slots.map((s) => s.team));
     for (const f of this.fighters) f.setDurability(this.rules.durability);
@@ -312,6 +315,7 @@ export class Game {
       f.netName = s.pname || null;
       f.netColor = s.color || null;
       f.isYou = i === you;
+      f.setReward(s.reward);
       return f;
     });
     this.applyTeams(spec.setup.teams, spec.fighters.map((s) => s.team));
@@ -419,6 +423,8 @@ export class Game {
         this.teamsAlive = left;
         if (left.size <= 1) this.endRound(alive[0] || null);
       } else if (alive.length <= 1) this.endRound(alive[0] || null);
+      // the tutorial and practice room follow along every step
+      if (this.mode === 'match') this.onTick?.(dt);
     } else if (this.phase === 'roundOver') {
       const w = this.roundWinner;
       if (w && w.alive && w.grounded && w.state === 'idle' && this.phaseTime > 0.6) w.setState('victory');

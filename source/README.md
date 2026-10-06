@@ -4,6 +4,8 @@ A 3D last-one-standing brawler in Three.js with three ways to play:
 - **Fight**: you against 1 to 7 CPU fighters in the coliseum.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
+- **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
+  guns and spells) and a free practice room, both against a training dummy that cannot be knocked out.
 
 Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
 Power-ups, backstabs, parries and (in tournaments) friendly fire and revives make positioning and teamwork matter.
@@ -23,6 +25,14 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   code, and Fight online and fighting in a tournament stay locked until it is filled in (Fight versus the CPU and watching a tournament
   do not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
+
+## Training
+- The tutorial shows one lesson at a time in a panel on the left and moves on when you have done it (Tab skips a lesson).
+  The dummy stands still, holds its guard or throws slow punches, depending on the lesson.
+- The practice room shows your last hit, the current combo and your best combo. Tab changes what the dummy does,
+  G lays out two pieces of gear at a time, R puts you both back in the middle. Mana refills itself there.
+- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, button names on a gamepad, on-screen
+  button names on a touch screen. Gamepad and touch controls replace the placeholder labels with `registerPromptDevice()`.
 
 ## Fight online: the 30-second queue
 - Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;

@@ -54,7 +54,7 @@ export class Fighter {
 
   get isHuman() { return !!this.controller?.isHuman; }
   // Online matches name each fighter after the person playing it (netName/netColor).
-  get label() { return this.netName || (this.isHuman ? `P${this.controller.playerIndex + 1}` : 'CPU'); }
+  get label() { return this.netName || (this.isHuman ? `P${this.controller.playerIndex + 1}` : this.controller?.label || 'CPU'); }
   get labelColor() { return this.netColor || (this.isHuman ? PLAYER_COLORS[this.controller.playerIndex] : ''); }
   get isPlayer() { return !!this.netName || this.isHuman; }
 
@@ -793,6 +793,8 @@ export class Fighter {
     if (world.phase === 'roundOver' || world.phase === 'matchOver') return;
     this.hp -= amount;
     if (src && src !== this && quiet) src.stats.damage += amount;
+    // training: the dummy and the student can be hurt but never knocked out
+    if (this.immortal && this.hp < 1) this.hp = 1;
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;

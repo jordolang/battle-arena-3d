@@ -322,6 +322,48 @@ export function applyTeamOutfit(model, color) {
   model.ring.material.color.copy(team);
 }
 
+// Fundraiser goal rewards (cosmetic only): tier 1 a silver laurel wreath, tier 2 a golden crown with
+// gold-glinting trim. Either adds a thin outer ring round the floor marker, which keeps its own colour.
+export function applyReward(model, tier) {
+  if (tier !== 1 && tier !== 2) return;
+  const gold = tier === 2;
+  const mat = new THREE.MeshStandardMaterial({
+    color: gold ? 0xffc23a : 0xd9dee6, roughness: 0.25, metalness: 0.9, emissive: gold ? 0x7a4a00 : 0x30363e, emissiveIntensity: gold ? 0.55 : 0.35,
+  });
+  model.mats.push(mat);
+  const head = model.joints.head;
+  if (gold) {
+    const crown = new THREE.Mesh(merged('crown', [
+      [geo('crownBand', () => new THREE.CylinderGeometry(0.122, 0.116, 0.05, 20, 1, true)), [0, 0, 0]],
+      ...Array.from({ length: 6 }, (_, i) => {
+        const a = (i / 6) * Math.PI * 2;
+        return [geo('crownSpike', () => new THREE.ConeGeometry(0.022, 0.07, 6)), [Math.sin(a) * 0.115, 0.055, Math.cos(a) * 0.115]];
+      }),
+      [sphereLo(0.016), [0, 0.012, 0.124], [0, 0, 0], [1, 1, 0.6]],
+    ]), mat);
+    crown.position.y = 0.27; crown.rotation.x = -0.08; crown.castShadow = true;
+    head.add(crown);
+    model.mats[1].emissive?.setHex(0x5a3a00); // the trim catches a little gold light
+    if (model.mats[1].emissiveIntensity !== undefined) model.mats[1].emissiveIntensity = 0.35;
+  } else {
+    // leaves sweep round the sides and back and leave the brow open (the fighter faces +Z, angle 0)
+    // leaf pairs lie along the band, angled up and out like a laurel crown
+    const wreath = new THREE.Mesh(merged('laurel', Array.from({ length: 18 }, (_, i) => {
+      const a = 0.9 + (Math.floor(i / 2) / 8) * (Math.PI * 2 - 1.8), up = i % 2 ? 0.018 : -0.006;
+      return [sphereLo(0.03), [Math.sin(a) * 0.13, up, Math.cos(a) * 0.13], [0, a + Math.PI / 2, i % 2 ? 0.5 : -0.3], [1.25, 0.45, 0.28]];
+    })), mat);
+    wreath.position.y = 0.245; wreath.rotation.x = -0.12; wreath.castShadow = true;
+    head.add(wreath);
+  }
+  const ring = new THREE.Mesh(
+    geo('rewardRing', () => new THREE.RingGeometry(0.72, 0.79, 40).rotateX(-Math.PI / 2)),
+    new THREE.MeshBasicMaterial({ color: gold ? 0xffc23a : 0xd9dee6, transparent: true, opacity: 0.85, depthWrite: false })
+  );
+  ring.position.y = 0.001; ring.renderOrder = 1;
+  model.ring.add(ring); // hides with the floor marker when the fighter falls
+  model.rewardRing = ring;
+}
+
 // Returns what headgear and back pieces hide: { head: [meshes], cape: mesh|null }.
 function addAccessory(kind, head, chest, { giMat, trimMat, metalMat }) {
   const out = { head: [], cape: null };

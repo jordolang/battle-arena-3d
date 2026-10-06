@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST, GUARD_MAX, PLAYER_COLORS,
   STAMINA, STAMINA_MAX, DODGE, COMBAT, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
-import { buildFighterModel, computePose, applyPose, applyTeamOutfit, setGear, setArmorVisible, animateLife } from './fighterModel.js';
+import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 import { dressFighter } from './wardrobeModels.js';
 import { bodyDef } from './cosmetics.js';
@@ -56,9 +56,16 @@ export class Fighter {
     applyTeamOutfit(this.model, color);
   }
 
+  // Cosmetic reward for a fundraising group that reached its goal (fundraiser.js REWARDS): 0 none, 1 silver, 2 gold.
+  setReward(tier) {
+    if (this.reward || !tier) return;
+    this.reward = tier;
+    applyReward(this.model, tier);
+  }
+
   get isHuman() { return !!this.controller?.isHuman; }
   // Online matches name each fighter after the person playing it (netName/netColor).
-  get label() { return this.netName || (this.isHuman ? `P${this.controller.playerIndex + 1}` : 'CPU'); }
+  get label() { return this.netName || (this.isHuman ? `P${this.controller.playerIndex + 1}` : this.controller?.label || 'CPU'); }
   get labelColor() { return this.netColor || (this.isHuman ? PLAYER_COLORS[this.controller.playerIndex] : ''); }
   get isPlayer() { return !!this.netName || this.isHuman; }
 
@@ -797,6 +804,8 @@ export class Fighter {
     if (world.phase === 'roundOver' || world.phase === 'matchOver') return;
     this.hp -= amount;
     if (src && src !== this && quiet) src.stats.damage += amount;
+    // training: the dummy and the student can be hurt but never knocked out
+    if (this.immortal && this.hp < 1) this.hp = 1;
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;

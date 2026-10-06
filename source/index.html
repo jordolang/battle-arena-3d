@@ -45,15 +45,22 @@
       <p class="tagline">Eight warriors, one blood-moon coliseum. Punch, kick, dodge, cast your spells and unleash your special until only one fighter, or one team, is left standing.</p>
       <div class="fundraiser">
         <div class="fr-head">Fundraiser members only</div>
-        <p>To fight online or in tournaments you must be enrolled in a José Madrid Salsa fundraising group. Enter your group's name or code. In tournaments your group is your team. Fight versus the CPU is open to everyone.</p>
-        <label class="field" for="fr-group"><span class="lbl">Fundraising group</span><input id="fr-group" class="nav" data-next="[data-act=to-setup]" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Group name or code"></label>
+        <p>To fight online or in tournaments you must be enrolled in a José Madrid Salsa fundraising group. Enter the fundraiser code your organizer gave you; it works on any device. In tournaments your group is your team. Fight versus the CPU is open to everyone.</p>
+        <label class="field" for="fr-group"><span class="lbl">Fundraiser code</span><input id="fr-group" class="nav" data-next="[data-act=to-setup]" maxlength="40" autocomplete="off" spellcheck="false" placeholder="JM-XXXX-XXXX"></label>
         <p class="fr-error" role="alert"></p>
+        <div class="fr-team" aria-live="polite">
+          <div class="fr-team-head"><b class="fr-team-name"></b><span class="fr-team-amt"></span></div>
+          <div class="fr-bar" hidden><i></i><span class="fr-mark" title="Halfway: Silver Laurel"></span></div>
+          <p class="fr-reward"></p>
+          <button class="nav fr-donate" data-act="donate">Donate to your team</button>
+        </div>
       </div>
       <div class="menu-list">
         <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
         <button class="nav big" data-act="to-locker">Locker room <small>fighters &amp; outfits</small></button>
+        <button class="nav big" data-act="to-training">Training <small>tutorial and practice room</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
       </div>
       <div class="share-row">
@@ -61,7 +68,11 @@
         <button class="nav" data-act="share-link">Send to a friend</button>
         <span class="share-msg" role="status"></span>
       </div>
-      <div class="keys-legend"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> select · <kbd>←</kbd><kbd>→</kbd> change · <kbd>Esc</kbd> back</div>
+      <div class="keys-legend">
+        <div class="legend-keys"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> select · <kbd>←</kbd><kbd>→</kbd> change · <kbd>Esc</kbd> back · controllers and touch screens work too</div>
+        <div class="legend-pad"><kbd class="pad">D-pad</kbd> choose · <kbd class="pad f0">A</kbd> select · <kbd class="pad">◀ ▶</kbd> change · <kbd class="pad f1">B</kbd> back · <kbd class="pad">Start</kbd> pause</div>
+        <div class="legend-touch">Tap to choose · tap ‹ › to change · in a fight, the left thumb moves and the right thumb fights</div>
+      </div>
     </div>
   </section>
 
@@ -112,10 +123,18 @@
 
   <section class="screen" id="screen-controls" data-back="controls-back" hidden>
     <div class="plate">
-      <div class="eyebrow">Shared keyboard</div>
+      <div class="eyebrow">Keyboard · controllers · touch</div>
       <h2>Controls</h2>
-      <p class="sub">Select a key and press a new one to rebind it. Up to four people can share one keyboard.</p>
+      <p class="sub">Select a key and press a new one to rebind it. Up to four people can share one keyboard, and each can use a game controller instead.</p>
       <div class="keys"></div>
+      <div class="ctl-h">Game controllers</div>
+      <p class="sub">Xbox, PlayStation, Switch Pro and most USB or Bluetooth pads work. Left stick moves, <b>X</b> punch, <b>Y</b> kick, <b>B</b> special, <b>A</b> jump, <b>LT</b> block, <b>RT</b> dodge and sprint, flick the right stick up, left or right for skills 1 to 3, <b>RB</b> fires your gun or spell, <b>LB</b> picks the next slot and the D-pad fires slots 1 to 4. Select a button below and press a new one to change it.</p>
+      <div class="pads-list"></div>
+      <div class="pad-grid"></div>
+      <div class="actions"><button class="nav big" data-act="reset-pad">Reset controller buttons</button></div>
+      <div class="ctl-h">Touch screens and rumble</div>
+      <p class="sub">On a phone or tablet, put your left thumb anywhere on the left side to move. Tap or slide across the buttons on the right to fight; hold Block and Dodge. Tap a slot on your item bar to fire it.</p>
+      <div class="touch-opts"></div>
       <div class="movelist">
         <div><b>Punch, punch, punch</b> three-hit combo ending in a hook</div>
         <div><b>Punch, kick</b> jab into a front kick</div>
@@ -133,12 +152,41 @@
         <div><b>Formation</b> stay within a few steps of a teammate and you both take 15% less damage</div>
         <div><b>Tournaments</b> friendly fire is on (careful with your area attacks), and a downed teammate can be revived by standing over them</div>
         <div><b>Sudden death</b> a ring of fire closes in and burns anyone outside it</div>
-        <div><b>Esc</b> or <b>P</b> pauses the match</div>
+        <div><b>Esc</b> or <b>P</b> pauses the match; so does <b>Start</b> on a controller or the pause button on a touch screen</div>
       </div>
       <p class="ghost-note">Some keyboards cannot register many keys at once. If a move does not fire while several people are holding keys, rebind to keys further apart.</p>
       <div class="actions">
         <button class="nav big" data-act="reset-keys">Reset to defaults</button>
         <button class="nav big" data-act="controls-back">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-training" data-back="to-title" hidden>
+    <div class="plate" style="width:min(560px,100%)">
+      <div class="eyebrow">Training</div>
+      <h2>Learn to fight</h2>
+      <p class="sub">The tutorial walks you through every move, block, skill and piece of gear against a training dummy, one lesson at a time. The practice room lets you try anything you like on the same dummy.</p>
+      <button class="nav opt row tr-fighter" data-opt="tr-fighter"></button>
+      <p class="setup-note tr-desc"></p>
+      <div class="menu-list">
+        <button class="nav big primary" data-act="tr-tutorial">Guided tutorial <small>14 short lessons</small></button>
+        <button class="nav big" data-act="tr-practice">Practice room <small>free training with the dummy</small></button>
+        <button class="nav big" data-act="to-title">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-trained" data-back="quit" hidden>
+    <div class="plate" style="width:min(500px,100%)">
+      <div class="eyebrow">Tutorial complete</div>
+      <h2>Ready for the arena</h2>
+      <p class="sub">You know every move now. Keep sharpening it in the practice room, or take on the CPU.</p>
+      <div class="menu-list">
+        <button class="nav big primary" data-act="tr-fight">Fight the CPU</button>
+        <button class="nav big" data-act="tr-practice">Practice room</button>
+        <button class="nav big" data-act="tr-tutorial">Replay the tutorial</button>
+        <button class="nav big" data-act="quit">Title screen</button>
       </div>
     </div>
   </section>
@@ -295,6 +343,7 @@
       <div class="share-row">
         <button class="nav share-fb" data-act="share-fb"><svg class="fb-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>Share this win</button>
         <button class="nav" data-act="share-link">Send to a friend</button>
+        <button class="nav fr-donate" data-act="donate">Donate to your team</button>
         <span class="share-msg" role="status"></span>
       </div>
     </div>

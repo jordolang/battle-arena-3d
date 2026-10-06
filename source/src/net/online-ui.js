@@ -47,15 +47,23 @@ export class OnlineMenus {
     });
 
     session.onLobby = (back) => {
+      if (session.kind === 'tournament') { this.tourney?.onLobby(back); return; }
       if (this.menus.active === 'lobby') this.renderLobby(true);
       else if (back) this.menus.show('lobby');
       else if (this.menus.active === 'results') this.decorateResults();
     };
+    session.onMatchStart = () => { this.lastKind = session.kind; };
     session.onLeft = (reason) => {
+      if (this.tourney?.owns) { this.tourney.onLeft(reason); return; }
+      // after a queue battle the host leaving is no news: everyone is on the results screen already
+      if (this.menus.active === 'results') { this.decorateResults(); return; }
       this.menus.show('online');
       this.setStatus(reason || 'You left the room.', !!reason);
     };
   }
+
+  // A local (versus CPU) match is starting: results get the local buttons again.
+  localMatch() { this.lastKind = null; }
 
   setStatus(text, bad = false) {
     this.statusEl.textContent = text;
@@ -63,6 +71,7 @@ export class OnlineMenus {
   }
 
   onShow(name) {
+    this.tourney?.onShow(name);
     if (name === 'online') {
       this.nameInput.value = this.session.settings.name || '';
       if (!this.busy) this.setStatus('');
@@ -71,10 +80,31 @@ export class OnlineMenus {
     if (name === 'results') this.decorateResults();
   }
 
-  async onAct(act) {
+  async onAct(act, el) {
     const s = this.session;
+    if (this.tourney && (act === 'to-tourney' || act.startsWith('t-')) && await this.tourney.onAct(act, el)) return;
     switch (act) {
       case 'to-online': this.menus.show('online'); break;
+      case 'net-queue':
+      case 'net-requeue': {
+        if (this.busy) return;
+        if (act === 'net-requeue') this.menus.show('online');
+        this.prepareName();
+        this.busy = true;
+        this.setStatus('Looking for a battle…');
+        try {
+          await s.queue();
+          this.menus.show(s.game.online === 'client' ? null : 'lobby');
+        } catch (err) {
+          this.setStatus(this.explain(err), true);
+        } finally { this.busy = false; }
+        break;
+      }
+      case 'net-invite': {
+        const link = this.inviteLink();
+        try { await navigator.clipboard.writeText(link); this.flashShare('Invite link copied. Send it to your friends.'); } catch { this.flashShare(link); }
+        break;
+      }
       case 'net-host': {
         if (this.busy) return;
         this.prepareName();
@@ -107,12 +137,14 @@ export class OnlineMenus {
       case 'net-rematch': s.startMatch(); break;
       case 'net-lobby': s.backToLobby(); this.menus.show('lobby'); break;
       case 'net-leave': s.leave(null); break;
+      case 'net-leave-title': this.lastKind = null; s.leave(null, true); this.menus.cb.onQuit(); break;
       case 'net-resume': this.menus.hideAll(); break;
     }
   }
 
   onOpt(key, el, d) {
     const s = this.session;
+    if (key.startsWith('t-')) { this.tourney?.onOpt(key, d); return; }
     if (!s.connected) return;
     if (key === 'net-fighter') s.pickFighter(d);
     else if (key === 'net-team') s.pickTeam(d);
@@ -125,6 +157,16 @@ export class OnlineMenus {
     s.settings.name = cleanName(this.nameInput.value);
     this.nameInput.value = s.settings.name;
     saveOnlineSettings(s.settings);
+  }
+
+  inviteLink() {
+    const code = this.session.lobby?.code || '';
+    return /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}?room=${code}` : code;
+  }
+
+  flashShare(text) {
+    this.lobbyEl.querySelector('.lobby-share').textContent = text;
+    this.flashUntil = performance.now() + 2500;
   }
 
   explain(err) {
@@ -140,6 +182,8 @@ export class OnlineMenus {
     const focused = document.activeElement;
     const focusKey = keepFocus && el.contains(focused) && !this.teamNamesEl.contains(focused) ? `${focused.dataset.opt || ''}|${focused.dataset.act || ''}` : null;
 
+    if (L.kind === 'queue') { this.renderQueue(keepFocus); return; }
+    el.querySelector('.lobby-head .eyebrow').textContent = 'Room code';
     el.querySelector('.room-code').textContent = L.code;
     const link = /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}?room=${L.code}` : '';
     el.querySelector('.lobby-share').innerHTML = s.isHost
@@ -205,6 +249,7 @@ export class OnlineMenus {
     el.querySelector('.net-note').textContent = L.inMatch
       ? 'A match is running. You join the next one.'
       : `${humans} ${humans === 1 ? 'player' : 'players'} in the room${count > humans ? `, ${count - humans} CPU` : ''}. Up to ${MAX_PLAYERS} people can join.`;
+    el.querySelector('.net-actions').dataset.mode = '';
     el.querySelector('.net-actions').innerHTML = s.isHost
       ? '<button class="nav big primary" data-act="net-start">Begin the fight</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Close room</button>'
       : '<span class="waiting">Waiting for the host…</span><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave room</button>';
@@ -215,11 +260,58 @@ export class OnlineMenus {
     }
   }
 
-  // The results screen offers different buttons online: only the host restarts.
+  // The queue's waiting room: a countdown, who is in, your fighter, and an invite link.
+  renderQueue(keepFocus) {
+    const s = this.session;
+    const L = s.lobby;
+    const el = this.lobbyEl;
+    el.querySelector('.lobby-head .eyebrow').textContent = 'Battle starts in';
+    el.querySelector('.room-code').textContent = `${L.queue?.left ?? 0}s`;
+    if (!(performance.now() < this.flashUntil)) el.querySelector('.lobby-share').innerHTML = `Everyone who joins the queue before the countdown ends fights in this battle. Invite friends: <span class="invite">${esc(this.inviteLink())}</span>`;
+    this.teamNamesEl.hidden = true;
+    this.teamNamesEl.innerHTML = '';
+    this.teamNamesCount = -1;
+    el.querySelector('.net-rules').innerHTML = [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']]
+      .map(([k, v]) => `<div class="row static"><span class="lbl">${k}</span><span class="val">${esc(v)}</span></div>`).join('');
+    const count = Math.max(4, L.members.length);
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      const m = L.members[i];
+      const def = m && m.fighter >= 0 ? ROSTER[m.fighter] : null;
+      const mine = m && m.id === s.myId;
+      const who = m ? `<span style="color:${ONLINE_COLORS[m.color]}">${esc(m.name)}</span>${mine ? '<small>You</small>' : ''}` : '<span>CPU</span>';
+      const inner = `<span class="fname">${m ? (def ? esc(def.name) : 'Random') : 'Waiting…'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'A CPU takes this seat if nobody joins'}</span>`;
+      rows.push(`<div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><span class="slot-n">${i + 1}</span><div class="who">${who}</div>
+        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter">${inner}</button>` : `<div class="fighter">${inner}</div>`}</div>`);
+    }
+    el.querySelector('.net-slots').innerHTML = rows.join('');
+    el.querySelector('.net-slots').classList.remove('teamed');
+    el.querySelector('.net-note').textContent = `${L.members.length} in the queue. Up to ${MAX_PLAYERS} fight; CPUs fill a battle up to 4.`;
+    const focusKey = keepFocus && el.contains(document.activeElement) ? `${document.activeElement.dataset.opt || ''}|${document.activeElement.dataset.act || ''}` : null;
+    const actions = el.querySelector('.net-actions');
+    if (actions.dataset.mode !== 'queue') {
+      actions.dataset.mode = 'queue';
+      actions.innerHTML = '<button class="nav big primary" data-act="net-invite">Copy invite link</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave queue</button>';
+    }
+    if (focusKey) [...el.querySelectorAll('.nav')].find((x) => `${x.dataset.opt || ''}|${x.dataset.act || ''}` === focusKey)?.focus({ preventScroll: true });
+  }
+
+  // The results screen offers different buttons online: only the host restarts. After a queue battle
+  // everyone simply queues again.
   decorateResults() {
     const s = this.session;
     const el = this.resultsActions;
     const screen = this.menus.screens.results;
+    if (this.lastKind === 'queue' || s.kind === 'queue') {
+      this.lastKind = 'queue';
+      screen.dataset.back = 'net-leave-title';
+      if (el.dataset.mode !== 'queue') {
+        el.dataset.mode = 'queue';
+        el.innerHTML = '<button class="nav big primary" data-act="net-requeue">Queue again</button><button class="nav big" data-act="net-leave-title">Title screen</button>';
+        if (this.menus.active === 'results') el.querySelector('.nav')?.focus({ preventScroll: true });
+      }
+      return;
+    }
     if (!s.connected) { screen.dataset.back = 'quit'; if (el.dataset.mode !== 'local') { el.innerHTML = this.localResults; el.dataset.mode = 'local'; } return; }
     const mode = s.isHost ? 'host' : 'client';
     screen.dataset.back = s.isHost ? 'net-lobby' : '';

@@ -27,18 +27,19 @@
 
   <section class="screen" id="screen-title" hidden>
     <div class="title-wrap">
-      <div class="eyebrow">2 to 8 fighters · free-for-all or teams</div>
+      <div class="eyebrow">Versus CPU · online brawls · team tournaments</div>
       <h1 class="logo"><img src="assets/jose-madrid-battle-arena-logo.webp" alt="José Madrid Salsa Battle Arena" width="640" height="640"></h1>
       <p class="tagline">Eight warriors, one blood-moon coliseum. Punch, kick, dodge, cast your spells and unleash your special until only one fighter, or one team, is left standing.</p>
       <div class="fundraiser">
         <div class="fr-head">Fundraiser members only</div>
-        <p>To fight in the arena you must be enrolled in a José Madrid Salsa fundraising group. Enter your group's name or code to play.</p>
+        <p>To fight in the arena you must be enrolled in a José Madrid Salsa fundraising group. Enter your group's name or code to play. In tournaments your group is your team.</p>
         <label class="field" for="fr-group"><span class="lbl">Fundraising group</span><input id="fr-group" class="nav" data-next="[data-act=to-setup]" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Group name or code"></label>
         <p class="fr-error" role="alert"></p>
       </div>
       <div class="menu-list">
-        <button class="nav big" data-act="to-setup">Fight</button>
-        <button class="nav big" data-act="to-online">Fight online</button>
+        <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
+        <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
+        <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
       </div>
       <div class="keys-legend"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> select · <kbd>←</kbd><kbd>→</kbd> change · <kbd>Esc</kbd> back</div>
@@ -47,8 +48,8 @@
 
   <section class="screen" id="screen-setup" data-back="to-title" hidden>
     <div class="plate">
-      <div class="eyebrow">Prepare the arena</div>
-      <h2>Choose your fighters</h2>
+      <div class="eyebrow">Versus CPU</div>
+      <h2>Choose your fighter</h2>
       <div class="setup-grid">
         <div>
           <div class="col-h">Rules</div>
@@ -85,7 +86,11 @@
         <div><b>Default keys for P1</b> move with W A S D, punch J, kick K, special I, block H, jump Space, dodge Left Shift, skills = - 0</div>
         <div><b>Stamina</b> the green bar; attacks, blocks, dodges and sprinting drain it. Run dry and you are slow and weak until it refills</div>
         <div><b>Tap dodge</b> rolls out of harm's way; <b>hold it</b> while moving to sprint</div>
-        <div><b>Teams</b> turn them on in the rules; teammates cannot hurt each other and the last team standing wins</div>
+        <div><b>Backstab</b> hits from behind deal 60% more damage and cannot be blocked: flank, cloak, or teleport behind</div>
+        <div><b>Parry</b> raise your block just as a punch or kick lands to stop it dead and stagger the attacker</div>
+        <div><b>Power-ups</b> walk through a floating gem: health, shield, rage, haste, mana, cloak or vampire</div>
+        <div><b>Formation</b> stay within a few steps of a teammate and you both take 15% less damage</div>
+        <div><b>Tournaments</b> friendly fire is on (careful with your area attacks), and a downed teammate can be revived by standing over them</div>
         <div><b>Sudden death</b> a ring of fire closes in and burns anyone outside it</div>
         <div><b>Esc</b> or <b>P</b> pauses the match</div>
       </div>
@@ -100,25 +105,76 @@
   <section class="screen" id="screen-online" data-back="to-title" hidden>
     <div class="plate net-plate">
       <div class="eyebrow">Online · 2 to 8 browsers</div>
-      <h2>Fight friends online</h2>
-      <p class="sub">One person hosts a room and shares its code. Everyone else joins from their own browser and keyboard. CPU fighters take any empty seats.</p>
+      <h2>Fight online</h2>
+      <p class="sub">Join the queue: everyone who queues within the same 30 seconds drops into one battle, free-for-all, with CPU fighters filling out small ones. Invite friends with the link in the queue.</p>
       <div class="net-form">
         <label class="field" for="net-name"><span class="lbl">Your name</span><input id="net-name" class="nav" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Fighter"></label>
         <div class="net-choice">
           <div class="net-card">
-            <div class="col-h">Host</div>
-            <p>Open a room and get a code to share.</p>
-            <button class="nav big primary" data-act="net-host">Host a room</button>
+            <div class="col-h">Queue</div>
+            <p>Find a battle with whoever is online now.</p>
+            <button class="nav big primary" data-act="net-queue">Join the queue</button>
           </div>
           <div class="net-card">
-            <div class="col-h">Join</div>
-            <label class="field" for="net-code"><span class="lbl">Room code</span><input id="net-code" class="nav code" data-act="net-join" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
-            <button class="nav big" data-act="net-join">Join room</button>
+            <div class="col-h">Invited?</div>
+            <label class="field" for="net-code"><span class="lbl">Invite code</span><input id="net-code" class="nav code" data-act="net-join" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
+            <button class="nav big" data-act="net-join">Join friend</button>
           </div>
         </div>
       </div>
       <p class="net-status" role="status"></p>
       <div class="actions"><button class="nav big" data-act="to-title">Back</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-tourney" data-back="to-title" hidden>
+    <div class="plate net-plate wide">
+      <div class="eyebrow">Tournament · team against team</div>
+      <h2>Fundraiser tournament</h2>
+      <p class="sub">Teams are fundraising groups. The admin opens the tournament room at the agreed time; teams join with the tournament code and fight a knockout bracket on the Badlands, with friendly fire on. Anyone can watch live and chat.</p>
+      <div class="net-form">
+        <label class="field" for="t-name"><span class="lbl">Your name</span><input id="t-name" class="nav" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Fighter"></label>
+        <div class="net-choice">
+          <div class="net-card">
+            <div class="col-h">Join</div>
+            <label class="field" for="t-code"><span class="lbl">Tournament code</span><input id="t-code" class="nav code" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
+            <p class="t-myteam"></p>
+            <div class="t-join-btns">
+              <button class="nav big primary" data-act="t-join-fight">Fight for my group</button>
+              <button class="nav big" data-act="t-join-watch">Watch</button>
+            </div>
+          </div>
+          <div class="net-card">
+            <div class="col-h">Host (admin)</div>
+            <label class="field" for="t-title"><span class="lbl">Tournament</span><input id="t-title" class="nav" maxlength="48" autocomplete="off" placeholder="Tournament name"></label>
+            <label class="field" for="t-when"><span class="lbl">Starts</span><input id="t-when" class="nav" type="datetime-local"></label>
+            <label class="field" for="t-prize"><span class="lbl">Prize</span><input id="t-prize" class="nav" maxlength="160" autocomplete="off" placeholder="What every winning player gets"></label>
+            <div class="t-opts"></div>
+            <p class="t-admin-code"></p>
+            <button class="nav big primary" data-act="t-host">Open tournament room</button>
+          </div>
+        </div>
+      </div>
+      <p class="net-status t-status" role="status"></p>
+      <div class="actions"><button class="nav big" data-act="to-title">Back</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-tlobby" data-back="t-leave" hidden>
+    <div class="plate wide tlobby">
+      <div class="t-head">
+        <div class="eyebrow">Tournament <span class="t-code"></span></div>
+        <h2 class="t-title"></h2>
+        <p class="t-when"></p>
+        <p class="t-prize"></p>
+      </div>
+      <div class="t-grid">
+        <div class="t-teams-col"><div class="col-h">Teams</div><div class="t-teams"></div><div class="t-me"></div></div>
+        <div class="t-bracket-col"><div class="col-h">Bracket</div><div class="t-bracket"></div><p class="t-last"></p></div>
+        <div class="t-chat-slot"></div>
+      </div>
+      <p class="setup-note t-note"></p>
+      <div class="actions t-actions"></div>
     </div>
   </section>
 
@@ -188,6 +244,11 @@
     </div>
   </section>
 
+  <div id="chat" hidden>
+    <div class="chat-head">Live chat <span class="chat-key">T to chat</span></div>
+    <div class="chat-log" role="log" aria-live="polite"></div>
+    <input class="chat-input" data-typing maxlength="200" autocomplete="off" spellcheck="true" placeholder="Say something (Enter to send, Esc to close)">
+  </div>
   <div id="focus-note" hidden>Click the game to give it keyboard control</div>
   <div id="boot">Entering the arena…</div>
   <div id="fatal" hidden>The arena went dark<p>Your browser lost the graphics context. Reload the page to fight again.</p></div>

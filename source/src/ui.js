@@ -167,7 +167,8 @@ export class Menus {
   }
 
   runAct(act, el) {
-    const gated = act === 'net-host' || act === 'net-join' || ((act === 'to-setup' || act === 'to-online') && this.active === 'title');
+    const gated = act === 'net-host' || act === 'net-join' || act === 'net-queue' || act === 't-join-fight' ||
+      ((act === 'to-setup' || act === 'to-online') && this.active === 'title');
     if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
@@ -189,13 +190,13 @@ export class Menus {
 
   focusAct(act) { this.screens[this.active]?.querySelector(`[data-act="${act}"]`)?.focus(); }
 
+  // Fight is you (P1 keys) against CPU fighters, free-for-all.
   buildMatchSetup() {
     const s = this.setup;
-    const tc = s.teams.count;
     return {
-      winsNeeded: s.winsNeeded, difficulty: s.difficulty, suddenDeath: s.suddenDeath, quality: s.quality,
-      teams: { count: tc, names: s.teams.names.slice(0, tc).map((n, i) => cleanTeamName(n, i)) },
-      slots: s.slots.slice(0, s.count).map((x) => ({ ...x, team: tc ? x.team % tc : -1 })),
+      mode: 'cpu', winsNeeded: s.winsNeeded, difficulty: s.difficulty, suddenDeath: s.suddenDeath, quality: s.quality,
+      teams: { count: 0, names: [] },
+      slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i === 0 ? 0 : 'cpu', team: -1 })),
     };
   }
 
@@ -243,28 +244,27 @@ export class Menus {
       `<button class="nav opt row" data-opt="${key}" ${extra}><span class="lbl">${label}</span><span class="val"><i>‹</i>${value}<i>›</i></span></button>`;
     const rules = this.screens.setup.querySelector('.rules');
     rules.innerHTML = [
-      opt('count', 'Fighters', s.count),
+      opt('count', 'CPU opponents', s.count - 1),
       opt('wins', 'Rounds to win', s.winsNeeded),
       opt('diff', 'CPU skill', DIFFICULTY[s.difficulty].label),
       opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
-      opt('teams', 'Teams', s.teams.count ? `${s.teams.count} teams` : 'Free-for-all'),
       opt('quality', 'Graphics', { auto: 'Auto', high: 'High', low: 'Low' }[s.quality]),
       opt('music', 'Music', s.music ? `${s.music}%` : 'Off'),
       opt('sfx', 'Sound effects', s.sfx ? `${s.sfx}%` : 'Off'),
     ].join('');
-    this.renderTeamNames();
-    const tc = s.teams.count;
+    this.teamNamesEl.hidden = true;
+    const tc = 0;
     const slots = this.screens.setup.querySelector('.slots');
     slots.innerHTML = s.slots.slice(0, s.count).map((slot, i) => {
       const def = slot.fighter >= 0 ? ROSTER[slot.fighter] : null;
-      const who = slot.control === 'cpu' ? 'CPU' : `Player ${slot.control + 1}`;
-      const whoColor = slot.control === 'cpu' ? '' : `style="color:${PLAYER_COLORS[slot.control]}"`;
+      const who = i === 0 ? 'You' : 'CPU';
+      const whoColor = i === 0 ? `style="color:${PLAYER_COLORS[0]}"` : '';
       const sw = def ? hex(def.eyes) : '#888';
       const t = tc ? slot.team % tc : -1;
       const teamBtn = tc ? `<button class="nav opt team" data-opt="team" data-i="${i}" style="--tc:${hex(TEAM_COLORS[t])}"><span>${esc(cleanTeamName(s.teams.names[t], t))}</span></button>` : '';
       return `<div class="slot" style="--fc:${sw}">
         <span class="slot-n">${i + 1}</span>
-        <button class="nav opt who" data-opt="control" data-i="${i}"><span ${whoColor}>${who}</span></button>
+        <div class="who"><span ${whoColor}>${who}</span></div>
         <button class="nav opt fighter" data-opt="fighter" data-i="${i}">
           <span class="fname">${def ? esc(def.name) : 'Random'}</span>
           <span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
@@ -272,11 +272,8 @@ export class Menus {
       </div>`;
     }).join('');
     slots.classList.toggle('teamed', !!tc);
-    const humans = s.slots.slice(0, s.count).filter((x) => x.control !== 'cpu').length;
-    const goal = tc ? 'Last team standing takes the round. Teammates cannot hurt each other.' : 'Last one standing takes the round.';
-    this.screens.setup.querySelector('.setup-note').textContent = humans
-      ? `${humans} on the keyboard, ${s.count - humans} CPU. ${goal}`
-      : `Everyone is CPU. Sit back and watch, or set a slot to a player. ${goal}`;
+    this.screens.setup.querySelector('.setup-note').textContent =
+      `You against ${s.count - 1} CPU ${s.count === 2 ? 'fighter' : 'fighters'}, last one standing takes the round. Grab the power-ups and hit them from behind.`;
   }
 
   updateTeamLabels() {

@@ -7,6 +7,8 @@ import { events } from './events.js';
 import { initAudio } from './audio.js';
 import { NetSession, cleanCode } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
+import { TournamentMenus } from './net/tourney-ui.js';
+import { ChatPanel } from './net/chat.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -28,6 +30,7 @@ function boot() {
     keyboard, bindings,
     onStart: (setup) => {
       lastSetup = setup;
+      online?.localMatch();
       audio.unlock();
       menus.hideAll();
       game.setPaused(false);
@@ -44,15 +47,29 @@ function boot() {
   });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
+  const chat = new ChatPanel({ session, keyboard });
+  online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
 
   game.onMatchEnd = (champ, fighters) => {
+    // tournament matches go back to the bracket instead of the results screen
+    if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
     setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
   };
 
   // pause with Escape or P during a match
   keyboard.onKey((e) => {
     if (game.mode !== 'match' || menus.active) return false;
+    // watching an online match: arrows pick whom the camera follows, up shows the whole field
+    if (game.online && !game.localFighter && /^Arrow/.test(e.code)) {
+      const alive = game.fighters.filter((f) => f.alive);
+      if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || !alive.length) game.rig.follow = null;
+      else {
+        const i = alive.indexOf(game.rig.follow);
+        game.rig.follow = alive[(i + (e.code === 'ArrowRight' ? 1 : -1) + alive.length + (i < 0 ? 1 : 0)) % alive.length];
+      }
+      return true;
+    }
     if (e.code === 'Escape' || e.code === 'KeyP') {
       if (game.phase === 'matchOver') return false;
       if (game.online) { menus.show('netpause'); return true; } // online matches keep running
@@ -85,6 +102,9 @@ function boot() {
   const room = cleanCode(params.get('room'));
   // (players without a fundraising group stay on the title until they enter one; the code waits in the join field)
   if (room) { document.getElementById('net-code').value = room; if (menus.requireGroup()) menus.show('online'); }
+  // a tournament link (?t=CODE) opens the tournament screen with the code filled in
+  const tcode = cleanCode(params.get('t'));
+  if (tcode && !room) { document.getElementById('t-code').value = tcode; menus.show('tourney'); }
 
   // when embedded in a frame the page needs a click before it hears keys
   const note = document.getElementById('focus-note');

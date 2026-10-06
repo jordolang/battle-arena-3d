@@ -23,6 +23,107 @@ export function createTransport() {
   return new PeerTransport(params.get('peerserver'));
 }
 
+// A beacon is a well-known name that at most one browser holds at a time. The online queue uses one
+// so that whoever queues first opens the battle and everyone queueing after them finds it, with no
+// server of our own: claiming the name either succeeds (you open the queue) or says it is taken
+// (someone else did, so ask them for their room code).
+export function createBeacon() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('net') === 'local') return new LocalBeacon();
+  return new PeerBeacon(peerOptions(params.get('peerserver')));
+}
+
+function peerOptions(server) {
+  const options = { debug: 1 };
+  if (server) {
+    const [host, port] = server.split(':');
+    Object.assign(options, { host, port: +port || 9000, path: '/', secure: location.protocol === 'https:' });
+  }
+  return options;
+}
+
+function peerClass() {
+  const Peer = globalThis.peerjs?.Peer || globalThis.Peer;
+  if (!Peer) throw new TransportError('unsupported', 'The networking library did not load.');
+  if (typeof RTCPeerConnection === 'undefined') throw new TransportError('unsupported', 'This browser cannot open peer-to-peer connections.');
+  return Peer;
+}
+
+class PeerBeacon {
+  constructor(options) { this.options = options; this.peer = null; this.info = () => null; }
+
+  // Resolves when we hold `name`; rejects with kind 'taken' when someone else does.
+  claim(name) {
+    return new Promise((resolve, reject) => {
+      let peer;
+      try { peer = new (peerClass())(ID_PREFIX + name, this.options); } catch (err) { reject(err); return; }
+      let open = false;
+      const timer = setTimeout(() => { if (!open) { peer.destroy(); reject(new TransportError('server', 'The matchmaking server did not answer.')); } }, 15000);
+      peer.on('open', () => { open = true; clearTimeout(timer); this.peer = peer; resolve(); });
+      peer.on('error', (err) => {
+        if (open) return;
+        clearTimeout(timer);
+        peer.destroy();
+        reject(err.type === 'unavailable-id' ? new TransportError('taken', 'Taken.') : new TransportError('server', 'Could not reach the matchmaking server.'));
+      });
+      // whoever asks gets the current info (room code and time left) and is let go
+      peer.on('connection', (conn) => {
+        conn.on('open', () => { try { conn.send(this.info() || {}); } catch { /* gone */ } setTimeout(() => conn.close(), 1500); });
+      });
+    });
+  }
+
+  // Asks the holder of `name` for its info. Rejects with kind 'noroom' when nobody holds it.
+  ask(name) {
+    return new Promise((resolve, reject) => {
+      let peer;
+      try { peer = new (peerClass())(this.options); } catch (err) { reject(err); return; }
+      let done = false;
+      const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); setTimeout(() => peer.destroy(), 200); fn(v); };
+      const timer = setTimeout(() => finish(reject, new TransportError('timeout', 'The queue did not answer.')), 12000);
+      peer.on('error', (err) => finish(reject, err.type === 'peer-unavailable' ? new TransportError('noroom', 'No queue is open.') : new TransportError('server', 'Could not reach the matchmaking server.')));
+      peer.on('open', () => {
+        const conn = peer.connect(ID_PREFIX + name, { reliable: true, serialization: 'json' });
+        conn.on('data', (msg) => finish(resolve, msg));
+        conn.on('error', () => finish(reject, new TransportError('noroom', 'No queue is open.')));
+      });
+    });
+  }
+
+  release() { try { this.peer?.destroy(); } catch { /* ignore */ } this.peer = null; }
+}
+
+// Same over BroadcastChannel, for ?net=local testing in tabs of one browser.
+class LocalBeacon {
+  constructor() { this.bc = null; this.info = () => null; this.id = 'b-' + Math.random().toString(36).slice(2, 9); }
+  claim(name) {
+    return new Promise((resolve, reject) => {
+      const bc = new BroadcastChannel('battle-arena-beacon-' + name);
+      let taken = false;
+      bc.onmessage = (e) => { if (e.data?.k === 'here') taken = true; };
+      bc.postMessage({ k: 'probe' });
+      setTimeout(() => {
+        if (taken) { bc.close(); reject(new TransportError('taken', 'Taken.')); return; }
+        this.bc = bc;
+        bc.onmessage = (e) => {
+          if (e.data?.k === 'probe') bc.postMessage({ k: 'here' });
+          if (e.data?.k === 'ask') bc.postMessage({ k: 'info', to: e.data.from, info: this.info() || {} });
+        };
+        resolve();
+      }, 250);
+    });
+  }
+  ask(name) {
+    return new Promise((resolve, reject) => {
+      const bc = new BroadcastChannel('battle-arena-beacon-' + name);
+      const timer = setTimeout(() => { bc.close(); reject(new TransportError('noroom', 'No queue is open.')); }, 800);
+      bc.onmessage = (e) => { if (e.data?.k === 'info' && e.data.to === this.id) { clearTimeout(timer); bc.close(); resolve(e.data.info); } };
+      bc.postMessage({ k: 'ask', from: this.id });
+    });
+  }
+  release() { try { this.bc?.close(); } catch { /* ignore */ } this.bc = null; }
+}
+
 class BaseTransport {
   constructor() {
     this.onMessage = () => {};   // (peerId, msg, channel)

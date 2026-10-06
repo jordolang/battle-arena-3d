@@ -24,7 +24,7 @@ const INPUT_HZ = 60;
 const INTERP_DELAY = 0.1;     // seconds a client draws behind the host
 const PEER_TIMEOUT = 10000;   // ms without any message before the host drops a player
 
-const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill'];
+export const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill'];
 const PHASES = ['idle', 'intro', 'fight', 'roundOver', 'matchOver'];
 const MOVE_NAMES = Object.keys(MOVES);
 const PROJECTILES = {
@@ -585,7 +585,7 @@ export class NetSession {
     this.fx = [];
     const wrap = (obj, name, tag) => {
       const orig = obj[name];
-      obj[name] = (...args) => { this.fx.push([tag, name, args]); return orig.apply(obj, args); };
+      obj[name] = (...args) => { if (!g.replay.playing) this.fx.push([tag, name, args]); return orig.apply(obj, args); };
       this.unhook.push(() => { delete obj[name]; });
     };
     for (const name of FX) wrap(g.effects, name, 'e');
@@ -593,7 +593,7 @@ export class NetSession {
     wrap(g.hud, 'announce', 'a');
     wrap(g.hud, 'feed', 'f');
     for (const name of SYNC_EVENTS) {
-      this.unhook.push(events.on(name, (data) => { if (g.online === 'host') this.fx.push(['v', name, [packPayload(data)]]); }));
+      this.unhook.push(events.on(name, (data) => { if (g.online === 'host' && !data?.replay) this.fx.push(['v', name, [packPayload(data)]]); }));
     }
   }
 

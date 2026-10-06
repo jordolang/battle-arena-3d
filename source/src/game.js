@@ -11,6 +11,7 @@ import { CameraRig } from './camera.js';
 import { AIController } from './ai.js';
 import { HumanController } from './input.js';
 import { Hud } from './hud.js';
+import { Replay } from './replay.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -45,6 +46,7 @@ export class Game {
     this.friendlyFire = false;
     this.reviveOn = false;
     this.hud = new Hud(hudRoot);
+    this.replay = new Replay(this);
 
     // world state read by fighters, AI and specials
     this.fighters = [];
@@ -100,7 +102,8 @@ export class Game {
 
   bindEvents() {
     events.on('hit', ({ heavy, ko }) => { this.arena.excitement += heavy ? 0.18 : 0.06; if (ko) this.arena.excitement += 1; });
-    events.on('ko', ({ fighter, by }) => {
+    events.on('ko', ({ fighter, by, replay }) => {
+      if (replay) return; // the instant replay plays back its own effects
       if (this.online === 'client') { this.arena.excitement += 1.2; flashScreen(); return; } // the host sends the rest
       this.rig.shake(0.5);
       this.arena.excitement += 1.2;
@@ -201,6 +204,7 @@ export class Game {
   }
 
   clearFighters() {
+    this.replay.reset();
     for (const f of this.fighters) {
       this.scene.remove(f.model.root);
       for (const m of f.model.mats) m.dispose();
@@ -545,7 +549,9 @@ export class Game {
     this.frameMs = this.frameMs * 0.95 + dt * 1000 * 0.05;
 
     try {
-      if (this.online === 'client') {
+      if (this.replay.playing) {
+        this.replay.step(dt);
+      } else if (this.online === 'client') {
         this.net.clientStep(dt);
         this.pickups.animate(this.time);
         this.effects.update(dt);
@@ -555,6 +561,7 @@ export class Game {
         this.cameraRight = this.rig.right;
         if (this.ringRadius < 90) this.arena.setFireRing(this.ringRadius);
         if (this.mode === 'match') this.updateHud(dt, !!this.localFighter && !this.localFighter.alive);
+        this.replay.record();
       } else if (!this.paused) {
         if (this.slowmo > 0) { this.slowmo -= dt; this.timeScale = this.slowmo > 0 ? 0.3 : 1; }
         const humansAlive = this.fighters.some((f) => f.isHuman && f.alive);
@@ -575,9 +582,11 @@ export class Game {
         if (this.ringRadius < 90) this.arena.setFireRing(this.ringRadius);
         if (this.online === 'host') this.net?.afterFrame(dt);
         if (this.mode === 'match') this.updateHud(dt, this.online ? !!this.localFighter && !this.localFighter.alive : anyHuman && !humansAlive);
+        this.replay.record();
       }
       if (noRender) return;
       this.renderer.render(this.scene, this.rig.camera);
+      this.replay.afterRender(dt);
       this.adaptQuality(dt);
     } catch (err) {
       this.errors++;

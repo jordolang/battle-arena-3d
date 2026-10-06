@@ -35,7 +35,7 @@ const MAX_VOICES = 28;   // hard cap on overlapping effects so an 8-fighter braw
 const PER_SOUND = 4;     // and on copies of any one effect
 
 export function initAudio(events, { getCamera } = {}) {
-  let ctx = null, master, musicBus, sfxBus, voiceBus, ambBus;
+  let ctx = null, master, limiter, tap = null, musicBus, sfxBus, voiceBus, ambBus;
   let sprite = null;
   const buffers = {};
   const live = [];                 // { src, name, end }
@@ -51,7 +51,7 @@ export function initAudio(events, { getCamera } = {}) {
     if (!AC) return;
     ctx = new AC({ latencyHint: 'interactive' });
     // master -> gentle limiter so a pile-up of hits can't clip
-    const limiter = ctx.createDynamicsCompressor();
+    limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -10; limiter.knee.value = 8; limiter.ratio.value = 6;
     limiter.attack.value = 0.003; limiter.release.value = 0.2;
     master = ctx.createGain();
@@ -326,6 +326,14 @@ export function initAudio(events, { getCamera } = {}) {
       applyVolumes();
     },
     play,
+    // The mixed output as a MediaStream, for recording the replay clip with its sound (null while locked).
+    captureStream() {
+      if (!ctx?.createMediaStreamDestination) return null;
+      tap = tap || ctx.createMediaStreamDestination();
+      limiter.connect(tap);
+      return tap.stream;
+    },
+    releaseStream() { if (tap) try { limiter.disconnect(tap); } catch { /* not connected */ } },
     get stats() { return { ...stats, state: ctx?.state ?? 'locked', voices: live.length, scene }; },
   };
 }

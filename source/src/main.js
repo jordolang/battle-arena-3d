@@ -56,8 +56,37 @@ function boot() {
   game.onMatchEnd = (champ, fighters) => {
     // tournament matches go back to the bracket instead of the results screen
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
-    setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
+    // freeze the deciding knockout now, then play it back (recording the clip) before the results
+    const teamed = champ.team >= 0 && champ.teamColor != null;
+    game.replay.capture(teamed ? `${champ.teamName} win the arena` : `${champ.name}${champ.label !== 'CPU' ? ` (${champ.label})` : ''} wins`);
+    const results = () => { if (game.phase === 'matchOver') menus.showResults(champ, fighters); };
+    setTimeout(() => {
+      if (game.phase !== 'matchOver') return;
+      game.keyboard.captureGameKeys = false;
+      game.hud.show(false);
+      if (!game.replay.play({ onDone: results })) results();
+    }, 2600);
   };
+  // the results screen's replay buttons
+  game.replay.audioStream = () => audio.captureStream();
+  game.replay.releaseStream = () => audio.releaseStream();
+  game.replay.onVideo = () => { if (menus.active === 'results') menus.updateReplayButtons(); };
+  menus.replay = {
+    get canPlay() { return game.replay.canPlay; },
+    get video() { return game.replay.video; },
+    watch() {
+      const back = () => { menus.show('results'); menus.updateReplayButtons(); };
+      menus.hideAll();
+      if (!game.replay.play({ onDone: back })) back();
+    },
+  };
+  // any of these keys, or a tap, skips the replay
+  keyboard.onKey((e) => {
+    if (!game.replay.playing) return false;
+    if (['Enter', 'NumpadEnter', 'Space', 'Escape'].includes(e.code)) game.replay.skip();
+    return true;
+  });
+  document.getElementById('stage').addEventListener('pointerdown', () => game.replay.skip());
 
   // pause with Escape or P during a match
   keyboard.onKey((e) => {

@@ -4,6 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>José Madrid Salsa Battle Arena</title>
+<!--OG-START-->
+<meta name="description" content="A free 3D arena brawler you play in your browser. Up to eight fighters, spells, specials and online rooms. Last one standing wins.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="José Madrid Salsa Battle Arena">
+<meta property="og:title" content="José Madrid Salsa Battle Arena">
+<meta property="og:description" content="Eight warriors, one blood-moon coliseum. Fight the CPU or your friends free in your browser. Last one standing wins.">
+<meta property="og:url" content="https://battle-arena-3d-mauve.vercel.app/">
+<meta property="og:image" content="https://battle-arena-3d-mauve.vercel.app/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="José Madrid Salsa Battle Arena crest over a fight in the coliseum">
+<meta name="twitter:card" content="summary_large_image">
+<!--OG-END-->
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +54,11 @@
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
+      </div>
+      <div class="share-row">
+        <button class="nav share-fb" data-act="share-fb"><svg class="fb-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>Share on Facebook</button>
+        <button class="nav" data-act="share-link">Send to a friend</button>
+        <span class="share-msg" role="status"></span>
       </div>
       <div class="keys-legend"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> select · <kbd>←</kbd><kbd>→</kbd> change · <kbd>Esc</kbd> back</div>
     </div>
@@ -249,6 +267,11 @@
         <button class="nav big primary" data-act="rematch">Rematch</button>
         <button class="nav big" data-act="to-setup">Change fighters</button>
         <button class="nav big" data-act="quit">Title screen</button>
+      </div>
+      <div class="share-row">
+        <button class="nav share-fb" data-act="share-fb"><svg class="fb-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>Share this win</button>
+        <button class="nav" data-act="share-link">Send to a friend</button>
+        <span class="share-msg" role="status"></span>
       </div>
     </div>
   </section>

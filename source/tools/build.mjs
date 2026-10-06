@@ -20,7 +20,7 @@ const html = readFileSync(join(root, 'index.html'), 'utf8');
 const body = html.split('<!--BODY-START-->')[1].split('<!--BODY-END-->')[0];
 // (the vendor script tag sits outside the BODY markers, so only the inlined copy ships)
 const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Grenze+Gotisch:wght@500&display=swap">';
-const head = `<title>Jose Madrid Salsa Presents: Battle for the Salsa King</title>\n${fonts}\n<style>\n${css}\n</style>`;
+const head = `<title>Battle Arena 3D</title>\n${fonts}\n<style>\n${css}\n</style>`;
 // PeerJS (MIT, see vendor/peerjs-LICENSE) is a classic script that defines window.peerjs for src/net/transport.js
 const peerjs = readFileSync(join(root, 'vendor/peerjs.min.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
 const script = `<script>\n${peerjs}\n</script>\n<script type="module">\n${js}\n</script>`;

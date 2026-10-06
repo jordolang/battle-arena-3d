@@ -106,6 +106,28 @@ export class Game {
 
   shake(a) { this.rig.shake(a); }
 
+  // Compiles every shader the match can need (hidden effect pools, the fire ring, buff shells,
+  // projectiles) up front, so the first special or KO of a match does not stall a frame.
+  warmShaders() {
+    const hidden = [];
+    this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    const samples = [
+      new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 6), new THREE.MeshStandardMaterial({ metalness: 0.9, roughness: 0.3 })),
+      new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]), new THREE.LineBasicMaterial()),
+      new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshBasicMaterial()),
+      this.effects.makeGlow(0xffffff, 1),
+    ];
+    for (const o of samples) this.scene.add(o);
+    try {
+      this.renderer.compile(this.scene, this.rig.camera);
+    } catch (err) {
+      console.warn('[game] shader warm-up skipped', err);
+    } finally {
+      for (const o of hidden) o.visible = false;
+      for (const o of samples) { this.scene.remove(o); if (!o.isSprite) o.geometry.dispose(); o.material.dispose(); } // sprites share one geometry
+    }
+  }
+
   onKO() {
     // round end is checked in the tick so simultaneous KOs resolve together
   }

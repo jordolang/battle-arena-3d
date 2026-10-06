@@ -1,22 +1,18 @@
-# Jose Madrid Salsa Presents: Battle for the Salsa King
-
-Sponsored by Jose Madrid Salsa (josemadridsalsa.com). Every load opens with a sponsor and title sequence
-(any key or click skips it; `?nointro` turns it off). The badge logo is drawn in `src/brand.js`; replace
-`sponsorLogo()` there with the official artwork if you have it.
-
+# Battle Arena 3D
 
 A 3D last-one-standing brawler in Three.js. 2 to 8 fighters, up to four people on one keyboard, CPU fighters fill the rest.
 Play free-for-all or in 2 to 4 named teams. Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
 
 ## Play
-- **Easiest:** open `dist/battle-arena.html` in Chrome, Edge, Firefox or Safari. It is one self-contained file.
+- **Easiest:** open `index.html` in the repo root in Chrome, Edge, Firefox or Safari. It is one self-contained file
+  (a copy of `dist/battle-arena.html`, which the build writes).
 - **From source:** serve this folder with any static server (for example `python3 -m http.server`) and open `index.html`.
   ES modules need a server, so double-clicking `index.html` will not work.
-- Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`.
+- Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`,
+  then copy `dist/battle-arena.html` to the repo root as `index.html`.
 
 ## Online play (2 to 8 browsers)
-- Hosted copy: https://battle-arena-3d-mauve.vercel.app (deployed from branch `game/battle-arena-3d` of github.com/jordolang/Battle-Arena).
-- Open `dist/battle-arena.html` (or the hosted page) in each player's browser and choose **Fight online**.
+- Open `index.html` from the repo root (or a hosted copy of it) in each player's browser and choose **Fight online**.
 - One person picks **Host a room** and shares the 5-character code. Everyone else types it under **Join**.
   On a hosted page the lobby also shows an invite link (`?room=CODE`) that opens the join screen with the code filled in.
 - In the room each player picks a fighter; the host sets fighters (2 to 8), rounds, CPU skill and sudden death, then starts.
@@ -74,7 +70,7 @@ Sudden death (default 75 s) brings in a closing ring of fire.
 Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dodge out of it in time.
 
 ## Code map (`src/`)
-- `brand.js` sponsor logo, opening title sequence · `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
+- `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions · `fighterModel.js` procedural jointed model and poses
 - `specials.js` special moves, skills and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `effects.js` pooled particles and FX

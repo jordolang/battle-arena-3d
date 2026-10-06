@@ -6,7 +6,6 @@ import { events } from './events.js';
 import { initAudio } from './audio.js';
 import { NetSession, cleanCode } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
-import { sponsorLogo, playIntro } from './brand.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -72,14 +71,9 @@ function boot() {
   const initial = loadSetupQuality(menus);
   if (initial) setQuality(game, initial);
   game.startDemo();
-  for (const el of document.querySelectorAll('.sponsor-mark')) el.innerHTML = sponsorLogo(el.closest('.presented-by') ? 34 : 64);
+  game.warmShaders();
   menus.show('title');
   document.getElementById('boot').hidden = true;
-  // sponsor and title sequence on every load (skipped for automated tests and invite links)
-  if (!params.has('autotest') && !params.has('room') && !params.has('nointro')) {
-    menus.hideAll();
-    playIntro(() => menus.show('title'));
-  }
   // an invite link (?room=CODE) opens the join screen with the code filled in
   const room = cleanCode(params.get('room'));
   if (room) { menus.show('online'); document.getElementById('net-code').value = room; }

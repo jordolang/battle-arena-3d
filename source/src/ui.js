@@ -298,11 +298,11 @@ export class Menus {
     const el = this.screens.results;
     const teamed = champ.team >= 0 && champ.teamColor != null;
     if (teamed) {
-      el.querySelector('.eyebrow').textContent = 'Crowned Salsa Kings';
+      el.querySelector('.eyebrow').textContent = 'Champions of the arena';
       el.querySelector('.champ').innerHTML = `<span style="color:${hex(champ.teamColor)}">${esc(champ.teamName)}</span>`;
       el.querySelector('.champ-sub').textContent = fighters.filter((f) => f.team === champ.team).map((f) => `${f.name} (${f.label})`).join(' · ');
     } else {
-      el.querySelector('.eyebrow').textContent = 'Crowned Salsa King';
+      el.querySelector('.eyebrow').textContent = 'Champion of the arena';
       el.querySelector('.champ').innerHTML = `<span style="color:${hex(champ.def.eyes)}">${esc(champ.name)}</span>`;
       el.querySelector('.champ-sub').textContent = `${champ.label === 'CPU' ? 'CPU' : champ.label} · ${champ.def.title}`;
     }

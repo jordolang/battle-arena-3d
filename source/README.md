@@ -50,8 +50,9 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   The dummy stands still, holds its guard or throws slow punches, depending on the lesson.
 - The practice room shows your last hit, the current combo and your best combo. Tab changes what the dummy does,
   G lays out two pieces of gear at a time, R puts you both back in the middle. Mana refills itself there.
-- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, button names on a gamepad, on-screen
-  button names on a touch screen. Gamepad and touch controls replace the placeholder labels with `registerPromptDevice()`.
+- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, the real (and rebound) buttons of the
+  connected controller, the on-screen button names on a touch screen. `main.js` registers the gamepad and touch labels.
+  On a controller View skips a lesson (or cycles the dummy); in the practice room L3 lays out gear and R3 resets.
 
 ## Fight online: the 30-second queue
 - Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
@@ -109,6 +110,32 @@ several tabs of one browser and no network, or `?peerserver=host:port` to use yo
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
+
+### Game controllers (`src/gamepad.js`, `src/padmap.js`)
+Up to four pads (Xbox, PlayStation, Switch Pro, most USB/Bluetooth pads in standard mapping). Pad N plays as PN by
+default; the Controls screen lists connected pads, lets each be seated as P1-P4, rebinds every action (shared by all
+pads) and turns rumble on or off. A pad also steers that player's keyboard section, so mixing works.
+
+| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Pause |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | Start or View |
+
+Menus: D-pad or stick to move (held directions repeat), A select, B back, LB/RB change a value, Start pauses or
+selects. Presses that drive a menu are not counted in the fight, so picking Resume with A does not also jump.
+Unplugging a pad mid-fight pauses a local match. Online, any connected pad steers your fighter. When you are out,
+hold A to fast-forward. Rumble: hits (harder for heavy ones), blocks, parries, guard breaks, knockouts, "Fight!".
+
+### Touch screens (`src/touch.js`)
+Shown during a fight on phones and tablets (Controls: Auto, Always on, Off; Small/Medium/Large buttons). The left
+thumb lands anywhere on the left side and becomes a floating analog stick. The right side has Punch, Kick, Jump,
+Block and Dodge (hold both), Special, the fighter's three skills (named, with a cooldown sweep, dimmed without mana)
+and Use/Next for the item bar; tapping a slot on the item bar fires it. Several fingers work at once and a thumb can
+slide from one button to the next. Pause and full-screen buttons sit top-left; upright phones get a narrower layout
+and a hint to turn sideways. Keyboard or pad input hides the overlay again (laptops with touch screens).
+
+### Couch play
+Fight setup has **Players here** (1-4). Each local player uses their keyboard section and/or their controller;
+the fighter list shows which device each one has, and the opening hints show the glyphs of the device in use.
 
 Combos: punch ×3 (ends in a hook), punch-punch-kick, kick-kick (knockdown roundhouse), jump then kick (dive kick).
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
@@ -171,7 +198,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
   (sculpted faces, hair, hands and muscled limbs merged per material), poses, breathing, blinking and gaze
-- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
+- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard, device registry and human controller (keys + pads + touch)
 - `items.js` weapon, gun and armor meshes and the ability bar icons
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX

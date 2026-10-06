@@ -240,6 +240,10 @@ export class NetSession {
 
   hostHousekeeping() {
     const now = performance.now();
+    // after our own tab stalled (loading a map, a busy machine) everyone's messages are still queued
+    // behind this timer: give them a fresh window instead of dropping the whole room
+    if (now - (this.lastHousekeeping ?? now) > 3000) for (const id of this.heard.keys()) this.heard.set(id, now);
+    this.lastHousekeeping = now;
     for (const [id, t] of this.heard) if (now - t > PEER_TIMEOUT) this.dropPeer(id, 'timed out');
     if (!this.lobby.inMatch) this.transport.broadcast({ t: 'ping' });
     // the queue counts down, then everyone in it fights (also when the battle fills up)
@@ -607,9 +611,13 @@ export class NetSession {
     this.chat = [];
     transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group) });
     this.hostHeard = performance.now();
+    let lastTick = performance.now();
     this.pingTimer = setInterval(() => {
+      const now = performance.now();
+      if (now - lastTick > 5000) this.hostHeard = now; // our tab stalled; the host's messages are still queued
+      lastTick = now;
       transport.sendHost({ t: 'ping' });
-      if (performance.now() - this.hostHeard > PEER_TIMEOUT) this.leave('Lost the connection to the host.');
+      if (now - this.hostHeard > PEER_TIMEOUT) this.leave('Lost the connection to the host.');
     }, 2000);
     try {
       await welcome;

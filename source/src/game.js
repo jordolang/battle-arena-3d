@@ -249,7 +249,9 @@ export class Game {
       const ctrl = s.control === 'cpu'
         ? new AIController(setup.difficulty)
         : new HumanController(this.keyboard, bindings[s.control], s.control);
-      return new Fighter(def, i, ctrl);
+      const f = new Fighter(def, i, ctrl);
+      f.setReward(s.reward);
+      return f;
     });
     this.applyTeams(setup.teams, setup.slots.map((s) => s.team));
     for (const f of this.fighters) f.setDurability(this.rules.durability);
@@ -312,6 +314,7 @@ export class Game {
       f.netName = s.pname || null;
       f.netColor = s.color || null;
       f.isYou = i === you;
+      f.setReward(s.reward);
       return f;
     });
     this.applyTeams(spec.setup.teams, spec.fighters.map((s) => s.team));

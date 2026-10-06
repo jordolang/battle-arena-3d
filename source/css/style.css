@@ -191,6 +191,7 @@ kbd {
 .share-row .fr-donate { border-color: var(--gold); color: var(--gold); }
 .tagline { font-size: 19px; color: var(--ash); margin: 0; max-width: 34ch; line-height: 1.35; }
 @media (max-height: 960px) { .title-wrap .tagline { display: none; } .title-wrap { gap: 12px; } }
+@media (max-height: 960px) { .title-wrap .menu-list .big { font-size: 24px; padding-top: 2px; padding-bottom: 2px; } .logo img { height: clamp(130px, 27vh, 300px); } }
 .menu-list { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-top: 8px; }
 
 button { font: inherit; color: inherit; }

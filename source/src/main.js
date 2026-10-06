@@ -76,6 +76,9 @@ function boot() {
       if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
     },
     onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
+    onSelect: (key) => online?.openSelect(key),
+    // the locker's "make this my fighter" also becomes your pick online
+    onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
   });
   menus.select = new CharacterSelect({ menus });
   menus.account = account;
@@ -266,7 +269,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, wardrobe, account };
+  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account, wardrobe };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

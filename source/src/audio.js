@@ -7,6 +7,7 @@
 // Nothing loads until the first key or click (browsers keep audio locked until then), the sprite comes first,
 // and the game stays silent rather than stalling if a file can't be fetched.
 import * as THREE from 'three';
+import { SKILLS, POWERUPS } from './config.js';
 
 const CDN = 'https://d2ol7oe51mr4n9.cloudfront.net/user_3Ca8TrzXB9OGqAMXyMN8bLQGzHv/';
 const FILES = {
@@ -29,6 +30,7 @@ const SPRITE = {
 // each fighter's special and skills share one elemental sound, keyed by the fighter's special
 const ELEMENT = { fireball: 'fire', frost: 'frost', slam: 'slam', venom: 'venom', storm: 'thunder', shadow: 'shadow', spear: 'blood', ironwill: 'ironwill' };
 const SPECIAL_SOUND = { ...ELEMENT, storm: 'whoosh_heavy', spear: 'chain' };
+const SPELL_SOUND = { sp_fireball: 'fire', sp_chain: 'thunder', sp_meteor: 'slam', sp_frostnova: 'frost', sp_heal: 'ironwill' };
 const MAX_VOICES = 28;   // hard cap on overlapping effects so an 8-fighter brawl never turns to mush
 const PER_SOUND = 4;     // and on copies of any one effect
 
@@ -136,6 +138,42 @@ export function initAudio(events, { getCamera } = {}) {
     stats.played++;
     return voice;
   }
+  // Gunfire is synthesised: a filtered noise crack over a low thump, and a falling zap for the rail rifle.
+  let noise = null;
+  function gunshot(gun, fighter) {
+    if (!ctx || muted) return;
+    if (!noise) {
+      noise = ctx.createBuffer(1, ctx.sampleRate * 0.6, ctx.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const now = ctx.currentTime, p = place(fighter);
+    const out = ctx.createGain();
+    out.gain.value = p.gain * (gun === 'shotgun' ? 1.0 : 0.8);
+    let dest = out;
+    if (p.pan && ctx.createStereoPanner) { const pn = ctx.createStereoPanner(); pn.pan.value = p.pan; out.connect(pn); dest = pn; }
+    dest.connect(sfxBus);
+    const len = gun === 'shotgun' ? 0.42 : gun === 'rifle' ? 0.3 : 0.2;
+    const n = ctx.createBufferSource(); n.buffer = noise; n.playbackRate.value = 0.9 + Math.random() * 0.2;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.setValueAtTime(gun === 'shotgun' ? 5200 : 7000, now);
+    f.frequency.exponentialRampToValueAtTime(gun === 'shotgun' ? 380 : 700, now + len);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(gun === 'rifle' ? 0.35 : 0.9, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + len);
+    n.connect(f).connect(ng).connect(out);
+    n.start(now, Math.random() * 0.1, len + 0.05);
+    const o = ctx.createOscillator(); o.type = gun === 'rifle' ? 'sawtooth' : 'sine';
+    o.frequency.setValueAtTime(gun === 'rifle' ? 1800 : gun === 'shotgun' ? 110 : 150, now);
+    o.frequency.exponentialRampToValueAtTime(gun === 'rifle' ? 90 : 38, now + (gun === 'rifle' ? 0.28 : 0.12));
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(gun === 'rifle' ? 0.25 : 0.8, now);
+    og.gain.exponentialRampToValueAtTime(0.001, now + (gun === 'rifle' ? 0.3 : 0.16));
+    o.connect(og).connect(out);
+    o.start(now); o.stop(now + 0.32);
+    stats.played++;
+  }
+
   function stopVoice(v) { try { v.src.stop(); } catch { /* already stopped */ } const i = live.indexOf(v); if (i >= 0) live.splice(i, 1); }
 
   // Announcer lines duck the music so they read clearly over it.
@@ -217,7 +255,8 @@ export function initAudio(events, { getCamera } = {}) {
   events.on('swing', ({ fighter, heavy }) => play(heavy ? 'whoosh_heavy' : 'whoosh_light', { fighter, gain: heavy ? 0.5 : 0.32, vary: 0.1 }));
   events.on('hit', ({ fighter, kind, heavy, damage }) => {
     const loud = Math.min(1, 0.55 + (damage || 0) / 30);
-    if (kind === 'punch') play(heavy ? 'punch_heavy' : 'punch_light', { fighter, gain: loud });
+    if (kind === 'weapon') { play('punch_heavy', { fighter, gain: loud, rate: 0.85 }); play('block', { fighter, gain: 0.5 * loud, rate: 1.35 }); }
+    else if (kind === 'punch') play(heavy ? 'punch_heavy' : 'punch_light', { fighter, gain: loud });
     else if (kind === 'kick') { play('kick', { fighter, gain: loud }); if (heavy) play('punch_heavy', { fighter, gain: 0.45, rate: 0.85 }); }
     else play('punch_heavy', { fighter, gain: 0.55 * loud, rate: 0.9 });
     if (heavy) roar(0.4, 0.6);
@@ -235,7 +274,22 @@ export function initAudio(events, { getCamera } = {}) {
   events.on('special', ({ fighter, special }) => { play(SPECIAL_SOUND[special] || 'whoosh_heavy', { fighter, gain: 0.85 }); roar(0.5); });
   events.on('thunder', ({ fighter }) => { play('thunder', { fighter, gain: 1 }); roar(0.7); });
   events.on('spearPull', ({ fighter }) => play('chain', { fighter, gain: 0.7, rate: 1.2 }));
-  events.on('skill', ({ fighter }) => play(elementOf(fighter), { fighter, gain: 0.7, rate: 1.08 }));
+  events.on('skill', ({ fighter, skill }) => {
+    const sk = SKILLS[skill];
+    if (sk?.gun) gunshot(sk.gun, fighter);
+    else if (sk?.spell) play(SPELL_SOUND[skill] || 'fire', { fighter, gain: 0.8, rate: 1.0 });
+    else play(elementOf(fighter), { fighter, gain: 0.7, rate: 1.08 });
+  });
+  // picking up gear: a metal clang for weapons and armor, a click for guns, a shimmer for spell tomes
+  events.on('pickup', ({ fighter, type }) => {
+    const pu = POWERUPS[type];
+    if (pu?.weapon || pu?.armor) play('block', { fighter, gain: 0.6, rate: 1.25 });
+    else if (pu?.spell) play('frost', { fighter, gain: 0.35, rate: 1.6 });
+    else if (pu?.item) play('chain', { fighter, gain: 0.45, rate: 1.7 });
+    else play('dodge', { fighter, gain: 0.35, rate: 1.4 });
+  });
+  events.on('weaponBreak', ({ fighter }) => play('guardbreak', { fighter, gain: 0.7, rate: 1.3 }));
+  events.on('armorBreak', ({ fighter }) => play('guardbreak', { fighter, gain: 0.75, rate: 0.9 }));
   // failure buzzes only for the people pressing the keys
   for (const ev of ['specialFail', 'skillFail', 'dodgeFail']) {
     events.on(ev, ({ fighter }) => { if (isHuman(fighter)) play('fizzle', { fighter, gain: 0.5 }); });

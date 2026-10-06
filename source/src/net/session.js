@@ -4,7 +4,7 @@
 // the match from the host's snapshots, slightly in the past so motion stays smooth.
 // Visual effects, announcer lines and gameplay events are replayed on the same
 // timeline, so a client also hears every `events` emit the audio pass listens to.
-import { ROSTER, MOVES, SKILLS, SKILL_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
+import { ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
 import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
@@ -12,7 +12,7 @@ import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, normFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -31,12 +31,13 @@ const PROJECTILES = {
   fireball: { color: 0xff7a1c, glow: 0xff5a00 },
   spear: { color: 0xc0c4cc },
 };
-for (const id of SKILL_IDS) if (SKILLS[id].type === 'bolt') PROJECTILES[id] = { color: SKILLS[id].color, glow: SKILLS[id].glow, size: SKILLS[id].size };
+for (const id of SKILL_IDS) if (SKILLS[id].type === 'bolt') PROJECTILES[id] = { color: SKILLS[id].color, glow: SKILLS[id].glow, size: SKILLS[id].size, stretch: SKILLS[id].stretch };
 const PROJ_KINDS = Object.keys(PROJECTILES);
 const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'telegraph', 'lightning'];
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
-  'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup'];
+  'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
+  'weaponBreak', 'armorBreak'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -629,6 +630,9 @@ export class NetSession {
         Math.round(f.stamina), r2(f.cooldowns[0]), r2(f.cooldowns[1]), Math.round(f.shield), f.skillId ? SKILL_IDS.indexOf(f.skillId) : -1,
         (f.armor > 0 || f.power > 0 || f.lifesteal > 0 ? 1 : 0) | (f.vanish > 0 ? 2 : 0) | (f.exhausted ? 4 : 0) | (f.haste > 0 ? 8 : 0) | (f.slow > 0 ? 16 : 0) | (f.sprinting ? 32 : 0),
         r2(f.cooldowns[2]), r2(f.downed), r2(f.reviveProgress), f.maxHp,
+        // gear: weapon, its hits left, armor points, selected bar slot, then [item, charges] pairs
+        f.weapon ? WEAPON_IDS.indexOf(f.weapon) : -1, f.weaponHits, Math.round(f.plate), f.sel,
+        f.items.flatMap((it) => [SKILL_IDS.indexOf(it.id), it.charges]),
       ]),
       pu: g.pickups.state(),
       p: g.projectiles.filter((p) => !p.dead).map((p) => [p.id, PROJ_KINDS.indexOf(p.kind), r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.dir.x), r2(p.dir.z), p.owner.slot]),
@@ -748,7 +752,7 @@ export class NetSession {
     const g = this.game;
     g.time += dt;
     this.sendInput(dt);
-    if (!this.snaps?.length) { for (const f of g.fighters) f.syncVisual(0); return; }
+    if (!this.snaps?.length) { for (const f of g.fighters) f.syncVisual(0, g); return; }
     const renderT = performance.now() / 1000 + this.clockOffset - INTERP_DELAY;
     let a = this.snaps[0], b = a;
     for (let i = this.snaps.length - 1; i >= 0; i--) {
@@ -835,9 +839,19 @@ export class NetSession {
       f.downed = num(fa[27]);
       f.reviveProgress = num(fa[28]);
       if (fa[29] > 0) f.maxHp = fa[29];
+      f.weapon = WEAPON_IDS[fa[30]] || null;
+      f.weaponHits = num(fa[31]);
+      f.plate = num(fa[32]);
+      f.sel = num(fa[33]);
+      const items = Array.isArray(fa[34]) ? fa[34] : [];
+      f.items.length = 0;
+      for (let k = 0; k + 1 < items.length && f.items.length < 4; k += 2) {
+        const id = SKILL_IDS[items[k]];
+        if (SKILLS[id]?.item) f.items.push({ id, charges: num(items[k + 1]) });
+      }
       if (f.alive) f.model.ring.visible = true;
       f.updateBuffVisuals();
-      f.syncVisual(flags & 16 ? 0 : dt);
+      f.syncVisual(flags & 16 ? 0 : dt, g);
     });
     g.pickups.applyState(a.pu);
     // projectiles: create, move and retire to match the host
@@ -852,7 +866,7 @@ export class NetSession {
         const style = PROJECTILES[kind];
         const ownerF = g.fighters[owner];
         if (!style || !ownerF) continue;
-        proj = new Projectile(g, ownerF, { kind, x, y, z, dx, dz, speed: 0, life: Infinity, radius: 0, color: style.color, glow: style.glow, size: style.size, hit: null });
+        proj = new Projectile(g, ownerF, { kind, x, y, z, dx, dz, speed: 0, life: Infinity, radius: 0, color: style.color, glow: style.glow, size: style.size, stretch: style.stretch, hit: null });
         this.clientProjectiles.set(id, proj);
       }
       const q = prev.get(id) || p;

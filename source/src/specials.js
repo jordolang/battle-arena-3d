@@ -30,7 +30,8 @@ export class Projectile {
       this.glow = world.effects.makeGlow(opts.glow ?? opts.color, 1.6);
       this.mesh.add(this.glow);
       this.size = opts.size ?? 1;
-      this.mesh.scale.setScalar(this.size);
+      this.stretch = opts.stretch ?? 1;  // bullets are drawn as long tracers
+      this.mesh.scale.set(this.size, this.size, this.size * this.stretch);
     }
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.y = Math.atan2(opts.dx, opts.dz);
@@ -66,7 +67,8 @@ export class Projectile {
       p.setXYZ(1, this.pos.x, this.pos.y, this.pos.z);
       p.needsUpdate = true;
     } else {
-      this.mesh.scale.setScalar((this.size ?? 1) * (1 + Math.sin(world.time * 40) * 0.08));
+      const k = (this.size ?? 1) * (1 + Math.sin(world.time * 40) * 0.08);
+      this.mesh.scale.set(k, k, k * (this.stretch ?? 1));
       if (Math.random() < dt * 60) world.effects.trail(this.pos.x, this.pos.y, this.pos.z, this.color);
     }
   }
@@ -242,6 +244,12 @@ export function executeSkill(f, id, world) {
   const pow = f.dmgMult();
   const s = f.def.scale;
   world.events.emit('skill', { fighter: f, skill: id });
+  if (sk.gun) {
+    // muzzle flash at the end of the barrel
+    const mx = f.pos.x + fw.x * (sk.gun === 'pistol' ? 0.95 : 1.15), mz = f.pos.z + fw.z * (sk.gun === 'pistol' ? 0.95 : 1.15);
+    world.effects.sparks(mx, 1.32 * s, mz, 0xffd27a, sk.gun === 'shotgun' ? 16 : 8, 3);
+    world.effects.ring(mx, 1.32 * s, mz, sk.color, 0.5, 0.12);
+  }
 
   switch (sk.type) {
     case 'bolt': {
@@ -251,7 +259,7 @@ export function executeSkill(f, id, world) {
         const dx = Math.sin(a), dz = Math.cos(a);
         world.projectiles.push(new Projectile(world, f, {
           kind: id, x: f.pos.x + dx * 0.8, y: 1.3 * s, z: f.pos.z + dz * 0.8, dx, dz,
-          speed: sk.speed, life: sk.life, radius: 0.3 + 0.18 * (sk.size || 1), color: sk.color, glow: sk.glow, size: sk.size,
+          speed: sk.speed, life: sk.life, radius: 0.3 + 0.18 * (sk.size || 1), color: sk.color, glow: sk.glow, size: sk.size, stretch: sk.stretch,
           hit: (o, p, w) => o.receiveHit(f, skillHit(sk, pow, p.dir.x, p.dir.z), w),
         }));
       }
@@ -341,12 +349,14 @@ export function executeSkill(f, id, world) {
       });
       break;
     }
-    case 'heal':
-      f.healLeft = sk.heal;
-      f.healRate = sk.heal / sk.duration;
+    case 'heal': {
+      const amount = sk.healPct ? f.maxHp * sk.healPct : sk.heal;
+      f.healLeft = amount;
+      f.healRate = amount / sk.duration;
       world.effects.ring(f.pos.x, 0.2, f.pos.z, sk.color, 1.8, 0.7);
       world.effects.sparks(f.pos.x, 1.2, f.pos.z, sk.color, 20, 3);
       break;
+    }
     case 'shield':
       f.shield = sk.shield;
       f.shieldTime = sk.duration;

@@ -71,12 +71,12 @@ Effects, announcer lines, the kill feed and every gameplay event are replayed on
 several tabs of one browser and no network, or `?peerserver=host:port` to use your own PeerJS server.
 
 ## Controls (rebindable in the Controls screen, saved in the browser)
-| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 |
-| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ |
-| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - |
-| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 |
+| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 | E | Q | 1 2 3 4 |
+| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ | , | Backspace | (unbound) |
+| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - | Num Enter | Num * | (unbound) |
+| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 | G | T | (unbound) |
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
@@ -93,6 +93,15 @@ Sudden death (default 75 s) brings in a closing ring of fire.
 - **Power-ups**: walk through the floating gem. Health (40% over 2 s), Shield (soaks 35% of your health), Rage (+30%
   damage, 10 s), Haste (10 s, full stamina), Mana (full blue bar), Cloak (invisible for 5 s, broken by attacking),
   Vampire (hits heal you, 10 s). Pads refill 9 to 16 s after they are taken.
+- **Gear** shows up on the same pads, floating as the real thing:
+  - *Weapons* (Longsword, Battle Axe, War Hammer) go in your right hand and turn punches into slashes, chops or
+    crushing blows with more reach and damage. Each one breaks after 12 to 16 landed blows.
+  - *Iron Armor* adds a helm and breastplate that soak 40% of every hit until they have taken half your health.
+  - *Guns* (Hand Cannon 12 shots, Scattergun 6 shells, Rail Rifle 4 piercing shots) and *spell tomes* (Fireball,
+    Chain Lightning, Meteor Storm, Frost Nova, Healing Light) go on the **ability bar** along the bottom of the
+    screen: a health orb and a mana orb either side of your weapon, armor and four item slots. A banner names each
+    new item and the key that uses it. Guns and spells cost no mana; each pickup gives a set number of shots or
+    casts and a second copy adds more. A spare gun rides on your hip; the one you fire is drawn in your hand.
 - **Healing springs** (Badlands): stand in the glowing pool to recover 4% health a second.
 - **Backstab**: a melee hit (punch, kick, lunge, close-range skill, Shadow Step) landing on someone facing away deals
   60% more damage, cannot be blocked and always staggers, even through armour.
@@ -131,8 +140,10 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 
 ## Code map (`src/`)
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
-- `fighter.js` fighter state machine, movement, attacks, hit reactions · `fighterModel.js` procedural jointed model and poses
-- `specials.js` special moves, skills and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
+- `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
+  (sculpted faces, hair, hands and muscled limbs merged per material), poses, breathing, blinking and gaze
+- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
+- `items.js` weapon, gun and armor meshes and the ability bar icons
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding

@@ -1,6 +1,6 @@
 // Game orchestration: renderer, fixed-step simulation, rounds and match flow.
 import * as THREE from 'three';
-import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, COMBAT, cleanTeamName, modeRules } from './config.js';
+import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, cleanTeamName, modeRules } from './config.js';
 import { events } from './events.js';
 import { Arena } from './arena.js';
 import { Badlands } from './battleground.js';
@@ -123,6 +123,16 @@ export class Game {
     events.on('revive', ({ fighter, by }) => {
       if (this.online === 'client' || this.mode !== 'match') return;
       this.hud.feed(`${by ? nameTag(by) : 'A teammate'} <span>revived</span> ${nameTag(fighter)}`);
+    });
+    // gear pickups and breakages show on the player's own ability bar (clients replay these events too)
+    events.on('pickup', ({ fighter, type }) => {
+      if (this.mode === 'match' && fighter) { const pu = POWERUPS[type]; if (pu?.weapon || pu?.item || pu?.armor) this.hud.gearToast(fighter, type); }
+    });
+    events.on('weaponBreak', ({ fighter, weapon }) => {
+      if (this.mode === 'match' && fighter) this.hud.gearNote(fighter, `${WEAPONS[weapon]?.label || 'Weapon'} shattered`);
+    });
+    events.on('armorBreak', ({ fighter }) => {
+      if (this.mode === 'match' && fighter) this.hud.gearNote(fighter, 'Armor broken');
     });
     events.on('pickup', ({ fighter, type }) => {
       if (this.online === 'client' || this.mode !== 'match' || !fighter.isPlayer) return;
@@ -615,7 +625,7 @@ export class Game {
     return {
       fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, phase: this.phase, round: this.round, mode: this.mode,
       rules: this.rules.mode, map: this.arena.name, pickups: this.pickups.state(),
-      fighters: this.fighters.map((f) => ({ name: f.name, team: f.team, hp: Math.round(f.hp), maxHp: f.maxHp, alive: f.alive, downed: +f.downed.toFixed(1), wins: f.stats.wins, kos: f.stats.kos, state: f.state })),
+      fighters: this.fighters.map((f) => ({ name: f.name, team: f.team, hp: Math.round(f.hp), maxHp: f.maxHp, alive: f.alive, downed: +f.downed.toFixed(1), wins: f.stats.wins, kos: f.stats.kos, state: f.state, weapon: f.weapon, plate: Math.round(f.plate), items: f.items.map((it) => `${it.id}x${it.charges}`) })),
       drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles,
     };
   }

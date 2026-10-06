@@ -1,6 +1,9 @@
-// Procedural articulated fighter: a jointed hierarchy of capsules with a
-// pose blender. No external assets, so it loads instantly.
+// Procedural articulated fighter: a jointed hierarchy of sculpted body parts with a
+// pose blender. No external assets, so it loads instantly. Faces, hands and muscled limbs
+// are built from lathed profiles and merged per material, so each fighter stays at about
+// thirty draw calls however much detail it carries.
 import * as THREE from 'three';
+import { buildGear, buildArmor } from './items.js';
 
 const geoCache = new Map();
 function geo(key, make) {
@@ -10,82 +13,195 @@ function geo(key, make) {
 const capsule = (r, len) => geo(`cap${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 6, 12));
 const sphere = (r) => geo(`sph${r}`, () => new THREE.SphereGeometry(r, 20, 14));
 const box = (x, y, z) => geo(`box${x}_${y}_${z}`, () => new THREE.BoxGeometry(x, y, z));
+// coarser shapes for small features, to keep eight detailed fighters cheap to draw
+const sphereLo = (r) => geo(`sphLo${r}`, () => new THREE.SphereGeometry(r, 12, 8));
+const capLo = (r, len) => geo(`capLo${r}_${len}`, () => new THREE.CapsuleGeometry(r, len, 3, 8));
+// A limb segment from a [radius, y] profile, pivot at y=0 and hanging down -Y.
+const lathe = (key, pts, seg = 14) => geo(`lathe_${key}`, () => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg));
+
+// Bakes several placed geometries into one (they all share a material), so a detailed
+// head or hand costs a single draw call. Cached by `key`.
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+function merged(key, parts) {
+  return geo(`merged_${key}`, () => {
+    const pos = [], nor = [], uv = [];
+    for (const [g, p = [0, 0, 0], r = [0, 0, 0], sc = [1, 1, 1]] of parts) {
+      const src = g.index ? g.toNonIndexed() : g.clone();
+      _m.compose(_v.set(...p), _q.setFromEuler(_e.set(...r)), _s.set(...sc));
+      src.applyMatrix4(_m);
+      pos.push(...src.attributes.position.array);
+      nor.push(...src.attributes.normal.array);
+      if (src.attributes.uv) uv.push(...src.attributes.uv.array);
+      else uv.push(...new Float32Array(src.attributes.position.count * 2));
+      src.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    out.computeBoundingSphere();
+    return out;
+  });
+}
 
 // Joint names used by poses.
 export const JOINTS = ['hips', 'spine', 'chest', 'head', 'shL', 'elL', 'shR', 'elR', 'hipL', 'knL', 'hipR', 'knR'];
 
-function limb(parent, material, r, len, name) {
-  // pivot at the joint, capsule hanging down along -Y
-  const pivot = new THREE.Group();
-  pivot.name = name;
-  const m = new THREE.Mesh(capsule(r, len), material);
-  m.position.y = -(len / 2 + r * 0.6);
-  m.castShadow = true;
-  pivot.add(m);
-  parent.add(pivot);
-  return pivot;
+// Profiles (radius, y) for muscled limbs, measured from the joint downwards.
+const UPPER_ARM = [[0, -0.33], [0.048, -0.325], [0.054, -0.29], [0.066, -0.2], [0.075, -0.12], [0.078, -0.05], [0.07, 0.02], [0.045, 0.06], [0, 0.07]];
+const SLEEVE = [[0.083, -0.13], [0.086, -0.06], [0.08, 0.02], [0.05, 0.075], [0, 0.08]];
+const FOREARM = [[0, -0.28], [0.038, -0.275], [0.04, -0.22], [0.05, -0.15], [0.06, -0.07], [0.062, -0.02], [0.05, 0.02], [0, 0.035]];
+const THIGH = [[0, -0.5], [0.062, -0.49], [0.066, -0.44], [0.085, -0.32], [0.1, -0.18], [0.108, -0.06], [0.098, 0.03], [0.06, 0.07], [0, 0.08]];
+const SHIN = [[0, -0.47], [0.047, -0.46], [0.05, -0.4], [0.064, -0.28], [0.076, -0.17], [0.07, -0.06], [0.062, 0.02], [0, 0.045]];
+const NECK = [[0, -0.02], [0.058, -0.015], [0.055, 0.08], [0.05, 0.13], [0, 0.135]];
+
+// Hair styles: [geometry, position, rotation, scale] parts merged into one mesh.
+function hairParts(style) {
+  const cap = (s = 1) => [geo('haircap', () => new THREE.SphereGeometry(0.133, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.52)), [0, 0.165, -0.008], [-0.18, 0, 0], [0.96 * s, 1.0 * s, 1.04 * s]];
+  switch (style) {
+    case 'short': return [cap()];
+    case 'topknot': return [cap(), [sphereLo(0.05), [0, 0.31, -0.05]], [capLo(0.022, 0.16), [0, 0.24, -0.17], [1.1, 0, 0]]];
+    case 'long': return [cap(1.02), [capsule(0.1, 0.2), [0, 0.06, -0.08], [0.15, 0, 0], [1.2, 1, 0.45]]];
+    case 'mohawk': return [[box(0.05, 0.13, 0.28), [0, 0.3, -0.01], [-0.15, 0, 0]], [box(0.045, 0.1, 0.12), [0, 0.22, -0.14], [-0.9, 0, 0]]];
+    case 'spiky': {
+      const spike = geo('spike', () => new THREE.ConeGeometry(0.035, 0.12, 5));
+      const out = [cap()];
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        out.push([spike, [Math.sin(a) * 0.08, 0.27, Math.cos(a) * 0.08 - 0.02], [Math.cos(a) * 0.6 - 0.2, 0, -Math.sin(a) * 0.6]]);
+      }
+      out.push([spike, [0, 0.31, -0.02], [-0.2, 0, 0]]);
+      return out;
+    }
+    case 'braids': {
+      const out = [cap()];
+      for (const x of [-0.07, 0, 0.07]) out.push([capLo(0.022, 0.26), [x, 0.07, -0.13], [0.25, 0, x * 2]]);
+      return out;
+    }
+    default: return []; // bald
+  }
+}
+
+function buildHead(def, head, skinMat, hairMat, giMat, eyeMat) {
+  // skull, jaw, cheekbones, nose, brow and ears in one skin mesh
+  const skin = new THREE.Mesh(merged(`head_${def.id}`, [
+    [lathe('neck', NECK, 12), [0, 0, 0]],
+    [sphere(0.125), [0, 0.165, 0], [0, 0, 0], [0.9, 1.05, 1.0]],
+    [sphere(0.095), [0, 0.095, 0.032], [0, 0, 0], [0.92, 0.78, 1.0]],
+    [sphereLo(0.04), [0.058, 0.135, 0.075], [0, 0, 0], [1, 0.7, 0.8]],
+    [sphereLo(0.04), [-0.058, 0.135, 0.075], [0, 0, 0], [1, 0.7, 0.8]],
+    [geo('nose', () => new THREE.ConeGeometry(0.022, 0.06, 4)), [0, 0.148, 0.122], [1.35, Math.PI / 4, 0], [1, 1, 0.8]],
+    [box(0.17, 0.026, 0.04), [0, 0.19, 0.103], [0.2, 0, 0]],
+    [sphereLo(0.032), [0.118, 0.155, -0.005], [0, 0, 0], [0.45, 1, 0.75]],
+    [sphereLo(0.032), [-0.118, 0.155, -0.005], [0, 0, 0], [0.45, 1, 0.75]],
+  ]), skinMat);
+  skin.castShadow = true;
+  head.add(skin);
+  // eyes: white globes with a coloured, faintly glowing iris; the group squashes to blink
+  const eyes = new THREE.Group();
+  eyes.position.set(0, 0.165, 0.1);
+  const white = new THREE.Mesh(merged('sclera', [[sphereLo(0.019), [0.042, 0, 0]], [sphereLo(0.019), [-0.042, 0, 0]]]),
+    geo('scleraMat', () => new THREE.MeshStandardMaterial({ color: 0xf2ece4, roughness: 0.25 })));
+  const iris = new THREE.Mesh(merged('iris', [[sphereLo(0.0105), [0.042, 0, 0.013]], [sphereLo(0.0105), [-0.042, 0, 0.013]]]), eyeMat);
+  eyes.add(white, iris);
+  head.add(eyes);
+  const mouth = new THREE.Mesh(box(0.048, 0.008, 0.012), geo('mouthMat', () => new THREE.MeshStandardMaterial({ color: 0x3a1a16, roughness: 0.8 })));
+  mouth.position.set(0, 0.088, 0.118);
+  head.add(mouth);
+  const hp = hairParts(def.hairStyle);
+  // a short beard along the jaw line, leaving the mouth clear
+  if (def.beard) hp.push([geo('beard', () => new THREE.SphereGeometry(0.1, 14, 8, 0, Math.PI, Math.PI * 0.6, Math.PI * 0.32)), [0, 0.1, 0.03], [0, 0, 0], [0.97, 1.0, 1.04]]);
+  if (hp.length) {
+    const hair = new THREE.Mesh(merged(`hair_${def.id}`, hp), hairMat);
+    hair.castShadow = true;
+    head.add(hair);
+  }
+  if (def.mask) {
+    const mask = new THREE.Mesh(geo('mask', () => new THREE.SphereGeometry(0.108, 16, 8, -Math.PI * 0.05, Math.PI * 1.1, Math.PI * 0.45, Math.PI * 0.4)), giMat);
+    mask.position.set(0, 0.15, 0.02);
+    mask.scale.set(0.98, 1.1, 1.06);
+    head.add(mask);
+  }
+  return { eyes };
+}
+
+function buildHand(side) {
+  // a clenched fist: palm, a row of knuckles and a thumb wrapped across the front
+  const sx = side === 'L' ? 1 : -1;
+  return merged(`fist_${side}`, [
+    [sphereLo(0.05), [0, 0, 0], [0, 0, 0], [0.95, 1.1, 0.95]],
+    [capLo(0.026, 0.06), [0, -0.045, 0.028], [0, 0, Math.PI / 2], [1, 1, 1.05]],
+    [capLo(0.024, 0.055), [0, -0.02, 0.05], [0, 0, Math.PI / 2], [1, 1, 1]],
+    [capLo(0.018, 0.04), [-sx * 0.035, -0.03, 0.045], [0.3, 0, sx * 0.6]],
+  ]);
 }
 
 export function buildFighterModel(def) {
-  const giMat = new THREE.MeshStandardMaterial({ color: def.gi, roughness: 0.62, metalness: 0.05 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: def.trim, roughness: 0.75, metalness: 0.1 });
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.55 });
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0x9aa2ad, roughness: 0.3, metalness: 0.85 });
-  const eyeMat = new THREE.MeshStandardMaterial({ color: def.eyes, emissive: def.eyes, emissiveIntensity: 2.6 });
-  const mats = [giMat, trimMat, skinMat, metalMat];
+  const giMat = new THREE.MeshStandardMaterial({ color: def.gi, roughness: 0.78, metalness: 0.02 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: def.trim, roughness: 0.8, metalness: 0.05 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: def.skin ?? 0x8a5a3c, roughness: 0.58, metalness: 0.0 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0xa8b0bc, roughness: 0.3, metalness: 0.55 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: def.hair ?? 0x1a1210, roughness: 0.85, metalness: 0.0 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: def.eyes, emissive: def.eyes, emissiveIntensity: 1.1, roughness: 0.2 });
+  const mats = [giMat, trimMat, skinMat, metalMat, hairMat];
 
   const root = new THREE.Group();      // world position + facing
   const body = new THREE.Group();      // falls over as a whole (pivot at the feet)
   root.add(body);
   const s = def.scale;
   body.scale.setScalar(s);
+  const mesh = (g, m, shadow = true) => { const o = new THREE.Mesh(g, m); o.castShadow = shadow; return o; };
 
   const J = {};
   const hips = new THREE.Group(); hips.position.y = 0.98; body.add(hips); J.hips = hips;
-  const pelvis = new THREE.Mesh(box(0.36, 0.2, 0.22), trimMat); pelvis.castShadow = true; hips.add(pelvis);
-  const belt = new THREE.Mesh(box(0.4, 0.07, 0.25), metalMat); belt.position.y = 0.1; hips.add(belt);
+  const pelvis = mesh(sphere(0.19), giMat); pelvis.scale.set(1.0, 0.62, 0.76); pelvis.position.y = -0.02; hips.add(pelvis);
+  // knotted sash with two tails that swing as the fighter moves
+  const belt = mesh(geo('belt', () => new THREE.TorusGeometry(0.165, 0.03, 8, 24).rotateX(Math.PI / 2)), trimMat, false);
+  belt.scale.set(1.0, 1, 0.8); belt.position.y = 0.06; hips.add(belt);
+  const tails = new THREE.Group(); tails.position.set(0.09, 0.05, 0.12); hips.add(tails);
+  tails.add(mesh(merged('sashTails', [[box(0.05, 0.22, 0.012), [-0.02, -0.1, 0], [0, 0, 0.12]], [box(0.05, 0.19, 0.012), [0.035, -0.09, 0], [0, 0, -0.1]]]), trimMat, false));
 
   const spine = new THREE.Group(); spine.position.y = 0.1; hips.add(spine); J.spine = spine;
-  const abdomen = new THREE.Mesh(capsule(0.16, 0.16), giMat); abdomen.position.y = 0.14; abdomen.castShadow = true; spine.add(abdomen);
+  const abdomen = mesh(capsule(0.15, 0.14), giMat); abdomen.position.y = 0.12; abdomen.scale.set(1.05, 1, 0.82); spine.add(abdomen);
   const chest = new THREE.Group(); chest.position.y = 0.26; spine.add(chest); J.chest = chest;
-  const torso = new THREE.Mesh(capsule(0.21, 0.2), giMat); torso.position.y = 0.12; torso.scale.set(1.15, 1, 0.8); torso.castShadow = true; chest.add(torso);
-  const sash = new THREE.Mesh(box(0.08, 0.5, 0.36), trimMat); sash.position.set(0, 0.1, 0); sash.rotation.z = 0.6; chest.add(sash);
+  // ribcage under a wrap-over tunic, with skin showing at the open collar
+  const torso = mesh(sphere(0.2), giMat); torso.position.y = 0.12; torso.scale.set(1.24, 1.22, 0.84); chest.add(torso);
+  const collar = mesh(merged('collar', [[sphereLo(0.06), [0.08, 0.28, 0.0], [0, 0, 0], [1.4, 0.6, 1.0]], [sphereLo(0.06), [-0.08, 0.28, 0.0], [0, 0, 0], [1.4, 0.6, 1.0]]]), skinMat, false);
+  chest.add(collar);
+  const lapel = mesh(box(0.06, 0.34, 0.03), trimMat, false); lapel.position.set(0.03, 0.12, 0.165); lapel.rotation.set(-0.12, 0, 0.42); chest.add(lapel);
 
-  const head = new THREE.Group(); head.position.y = 0.42; chest.add(head); J.head = head;
-  const neck = new THREE.Mesh(capsule(0.06, 0.06), skinMat); neck.position.y = 0.0; head.add(neck);
-  const skull = new THREE.Mesh(sphere(0.135), trimMat); skull.position.y = 0.14; skull.scale.set(0.95, 1.08, 1); skull.castShadow = true; head.add(skull);
-  const mask = new THREE.Mesh(box(0.25, 0.1, 0.18), giMat); mask.position.set(0, 0.09, 0.06); head.add(mask);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(box(0.06, 0.018, 0.02), eyeMat);
-    eye.position.set(side * 0.05, 0.165, 0.125); eye.rotation.z = side * -0.18;
-    head.add(eye);
-  }
+  const head = new THREE.Group(); head.position.y = 0.38; chest.add(head); J.head = head;
+  const { eyes } = buildHead(def, head, skinMat, hairMat, giMat, eyeMat);
   addAccessory(def.accessory, head, chest, { giMat, trimMat, metalMat });
 
+  let grip = null, hand = {};
   for (const side of ['L', 'R']) {
     const sx = side === 'L' ? 1 : -1;  // fighter faces +Z, so its left is +X
-    const sh = limb(chest, giMat, 0.075, 0.2, 'sh' + side);
-    sh.position.set(sx * 0.29, 0.24, 0);
-    J['sh' + side] = sh;
-    const el = limb(sh, skinMat, 0.062, 0.18, 'el' + side);
-    el.position.y = -0.32;
-    J['el' + side] = el;
-    const bracer = new THREE.Mesh(capsule(0.072, 0.1), metalMat); bracer.position.y = -0.18; el.add(bracer);
-    const fist = new THREE.Mesh(sphere(0.075), trimMat); fist.position.y = -0.33; fist.scale.set(1, 1.05, 1.1); fist.castShadow = true; el.add(fist);
+    const sh = new THREE.Group(); sh.name = 'sh' + side; sh.position.set(sx * 0.29, 0.25, 0); chest.add(sh); J['sh' + side] = sh;
+    sh.add(mesh(lathe('upperArm', UPPER_ARM), skinMat));
+    sh.add(mesh(lathe('sleeve', SLEEVE), giMat));
+    const el = new THREE.Group(); el.name = 'el' + side; el.position.y = -0.31; sh.add(el); J['el' + side] = el;
+    el.add(mesh(lathe('forearm', FOREARM), skinMat));
+    const wrap = mesh(geo('wrap', () => new THREE.CylinderGeometry(0.046, 0.05, 0.11, 12)), trimMat, false); wrap.position.y = -0.2; el.add(wrap);
+    const fist = mesh(buildHand(side), skinMat); fist.position.y = -0.31; el.add(fist);
     el.userData.fist = fist;
+    hand[side] = el;
+    if (side === 'R') {
+      // weapons sit in the right fist, pointing along the forearm and tipped forward
+      grip = new THREE.Group(); grip.position.set(0, -0.32, 0.01); el.add(grip);
+    }
     if (def.accessory === 'pads') {
-      const pad = new THREE.Mesh(sphere(0.13), metalMat); pad.scale.set(1.1, 0.7, 1.1); pad.position.set(sx * 0.04, 0.02, 0);
+      const pad = mesh(sphere(0.13), metalMat); pad.scale.set(1.1, 0.7, 1.1); pad.position.set(sx * 0.04, 0.03, 0);
       sh.add(pad);
     }
 
-    const hip = limb(hips, giMat, 0.095, 0.3, 'hip' + side);
-    hip.position.set(sx * 0.12, -0.05, 0);
-    J['hip' + side] = hip;
-    const kn = limb(hip, giMat, 0.08, 0.3, 'kn' + side);
-    kn.position.y = -0.46;
-    J['kn' + side] = kn;
-    const wrap = new THREE.Mesh(capsule(0.083, 0.12), trimMat); wrap.position.y = -0.3; kn.add(wrap);
-    const foot = new THREE.Mesh(box(0.12, 0.08, 0.24), trimMat); foot.position.set(0, -0.48, 0.05); foot.castShadow = true; kn.add(foot);
+    const hip = new THREE.Group(); hip.name = 'hip' + side; hip.position.set(sx * 0.11, -0.05, 0); hips.add(hip); J['hip' + side] = hip;
+    hip.add(mesh(lathe('thigh', THIGH), giMat));
+    const kn = new THREE.Group(); kn.name = 'kn' + side; kn.position.y = -0.46; hip.add(kn); J['kn' + side] = kn;
+    kn.add(mesh(lathe('shin', SHIN), giMat));
+    const ankle = mesh(geo('ankleWrap', () => new THREE.CylinderGeometry(0.052, 0.056, 0.12, 12)), trimMat, false); ankle.position.y = -0.36; kn.add(ankle);
+    const foot = mesh(merged('foot', [[sphereLo(0.06), [0, 0, 0.03], [0, 0, 0], [0.95, 0.75, 2.0]], [box(0.11, 0.025, 0.25), [0, -0.035, 0.035]]]), trimMat);
+    foot.position.set(0, -0.475, 0.0); kn.add(foot);
   }
 
   // Floor marker in the fighter's colour so everyone can be told apart.
@@ -112,10 +228,77 @@ export function buildFighterModel(def) {
   }));
   shell.scale.set(0.8 * s, 1.15 * s, 0.8 * s); shell.position.y = 1.0 * s; shell.visible = false; root.add(shell);
 
+  // Gear slots: the right fist holds a weapon or a drawn gun, a gun not in use rides on the right hip,
+  // and Iron Armor adds a helm and breastplate.
+  const holster = new THREE.Group(); holster.position.set(-0.2, -0.02, 0.03); holster.rotation.set(Math.PI / 2 + 0.15, 0, -0.1); holster.scale.setScalar(0.85); hips.add(holster);
+  const armor = buildArmor(); armor.helm.visible = armor.chest.visible = false; head.add(armor.helm); chest.add(armor.chest);
+
   const rest = {};
   for (const k of JOINTS) rest[k] = { x: 0, y: 0, z: 0 };
-  return { root, body, joints: J, ring, ice, aura, shell, mats, eyeMat, current: rest, hipsBaseY: 0.98 };
+  return {
+    root, body, joints: J, ring, ice, aura, shell, mats, eyeMat, current: rest, hipsBaseY: 0.98,
+    torso, eyes, tails, grip, holster, armor, gear: {}, held: null, holstered: null,
+    blinkAt: 1 + Math.random() * 3, lookYaw: 0,
+  };
 }
+
+// Shows `kind` (a weapon or gun id, or null) in the right fist, and `holstered` (a gun id or null) on the hip.
+export function setGear(model, held, holstered) {
+  if (model.held !== held) {
+    if (model.held) model.gear['hand_' + model.held].visible = false;
+    if (held) {
+      const key = 'hand_' + held;
+      if (!model.gear[key]) {
+        const g = buildGear(held);
+        const gun = held === 'pistol' || held === 'shotgun' || held === 'rifle';
+        // melee weapons continue the forearm, tipped toward the knuckles; guns point their barrel the same way
+        if (gun) g.rotation.set(Math.PI / 2, 0, 0); else g.rotation.set(Math.PI - 0.5, 0, 0);
+        if (gun) g.position.set(0, 0.02, 0.03);
+        model.grip.add(g);
+        model.gear[key] = g;
+      }
+      model.gear[key].visible = true;
+      model.joints.elR.userData.fist.visible = true;
+    }
+    model.held = held;
+  }
+  if (model.holstered !== holstered) {
+    if (model.holstered) model.gear['hip_' + model.holstered].visible = false;
+    if (holstered) {
+      const key = 'hip_' + holstered;
+      if (!model.gear[key]) { model.gear[key] = buildGear(holstered); model.holster.add(model.gear[key]); }
+      model.gear[key].visible = true;
+    }
+    model.holstered = holstered;
+  }
+}
+
+export function setArmorVisible(model, on) {
+  model.armor.helm.visible = on;
+  model.armor.chest.visible = on;
+}
+
+// Small signs of life on top of the pose: breathing, blinking, glancing at the nearest foe and a
+// sash that trails behind when running. `lookAt` is a world-space yaw to look toward, or null.
+export function animateLife(model, f, dt, lookAt) {
+  const breath = Math.sin(f.animTime * (f.exhausted ? 5.5 : 2.1)) * (f.exhausted ? 0.035 : 0.014);
+  model.torso.scale.set(1.24 + breath * 0.6, 1.22 + breath, 0.84 + breath * 1.2);
+  model.blinkAt -= dt;
+  let lid = 1;
+  if (model.blinkAt < 0) {
+    lid = Math.min(1, Math.abs(model.blinkAt + 0.07) / 0.07);
+    if (model.blinkAt < -0.14) model.blinkAt = 2 + Math.random() * 4;
+  }
+  model.eyes.scale.y = f.alive ? Math.max(0.1, lid) : 0.1;
+  let want = 0;
+  if (lookAt !== null && f.alive) want = Math.max(-0.75, Math.min(0.75, wrap(lookAt - f.facing)));
+  model.lookYaw += (want - model.lookYaw) * Math.min(1, dt * 6);
+  model.joints.head.rotation.y += model.lookYaw;
+  const speed = Math.hypot(f.vel.x, f.vel.z);
+  const swing = Math.min(1.2, speed * 0.12) + Math.sin(f.animTime * 9) * Math.min(0.15, speed * 0.02);
+  model.tails.rotation.x += (swing - model.tails.rotation.x) * Math.min(1, dt * 8);
+}
+function wrap(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
 
 // Dress a fighter in team colours: the gi takes the team colour (keeping a hint of the
 // fighter's own), and team-coloured pauldrons and a tabard go on over it.
@@ -140,13 +323,10 @@ export function applyTeamOutfit(model, color) {
 }
 
 function addAccessory(kind, head, chest, { giMat, trimMat, metalMat }) {
-  if (kind === 'topknot') {
-    const knot = new THREE.Mesh(sphere(0.06), trimMat); knot.position.set(0, 0.3, -0.04); head.add(knot);
-    const tail = new THREE.Mesh(capsule(0.025, 0.18), trimMat); tail.position.set(0, 0.22, -0.16); tail.rotation.x = 1.0; head.add(tail);
-  } else if (kind === 'horns') {
+  if (kind === 'horns') {
     for (const side of [-1, 1]) {
       const horn = new THREE.Mesh(geo('horn', () => new THREE.ConeGeometry(0.035, 0.2, 10)), metalMat);
-      horn.position.set(side * 0.1, 0.27, 0.0); horn.rotation.z = side * -0.5;
+      horn.position.set(side * 0.1, 0.28, 0.0); horn.rotation.z = side * -0.5;
       head.add(horn);
     }
   } else if (kind === 'hood') {
@@ -247,6 +427,14 @@ function specialPose(kind, p) {
     case 'storm':
       charge = { ...guard, shR: [-3.05, 0, -0.15], elR: [-0.1, 0, 0], shL: [-0.4, 0, 0.6], spine: [-0.2, 0, 0] };
       release = { ...guard, shR: [-1.4, 0, -0.1], elR: [0, 0, 0], spine: [0.25, 0, 0] };
+      break;
+    case 'aim': // one-handed gun: arm straight out at the target, a kick of recoil on the shot
+      charge = { ...guard, shR: [-1.57, 0, 0.1], elR: [-0.02, 0, 0], chest: [0.02, -0.12, 0], spine: [0.04, -0.06, 0], head: [0, 0.15, 0], shL: [-0.5, 0, 0.35], elL: [-1.6, 0, 0] };
+      release = { ...charge, shR: [-1.85, 0, 0.1], elR: [-0.25, 0, 0], chest: [-0.06, -0.12, 0] };
+      break;
+    case 'aim2': // long gun: braced at the shoulder with both hands
+      charge = { ...guard, shR: [-1.4, 0, -0.05], elR: [-0.35, 0, 0], shL: [-1.4, 0, 0.62], elL: [-0.95, 0, 0], chest: [0.02, -0.2, 0], spine: [0.05, -0.1, 0], head: [0.05, 0.25, 0] };
+      release = { ...charge, shR: [-1.55, 0, -0.05], shL: [-1.55, 0, 0.62], chest: [-0.12, -0.2, 0], spine: [-0.08, -0.1, 0] };
       break;
     default: // fireball / frost: two-palm thrust
       charge = { ...guard, shL: [-0.4, 0, -0.3], elL: [-2.0, 0, 0], shR: [-0.4, 0, 0.3], elR: [-2.0, 0, 0], chest: [0, -0.8, 0], spine: [0, -0.4, 0], lift: -0.12 };

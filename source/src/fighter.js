@@ -1,7 +1,7 @@
 // Fighter simulation: state machine, movement, attacks and taking hits.
 import * as THREE from 'three';
 import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST, GUARD_MAX, PLAYER_COLORS,
-  STAMINA, STAMINA_MAX, DODGE } from './config.js';
+  STAMINA, STAMINA_MAX, DODGE, COMBAT } from './config.js';
 import { buildFighterModel, computePose, applyPose, applyTeamOutfit } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 
@@ -12,6 +12,8 @@ export function angleTo(ax, az, bx, bz) { return Math.atan2(bx - ax, bz - az); }
 export function wrapAngle(a) { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; }
 // Teammates never hurt or target each other. Fighters without a team (free-for-all) have team -1.
 export function allies(a, b) { return !!a && !!b && a !== b && a.team >= 0 && a.team === b.team; }
+// Whether `a`'s attacks pass through `b` without touching them: teammates, unless friendly fire is on.
+export function spared(a, b, world) { return allies(a, b) && !world.friendlyFire; }
 
 let nextId = 1;
 
@@ -35,6 +37,11 @@ export class Fighter {
     const shieldSkill = this.skillIds.map((id) => SKILLS[id]).find((sk) => sk?.type === 'shield');
     if (shieldSkill) this.model.shell.material.color.setHex(shieldSkill.color);
     this.reset(new THREE.Vector3(), 0);
+  }
+
+  // Modes scale everyone's health so fights last longer (MODES.durability).
+  setDurability(k) {
+    this.maxHp = Math.round(this.def.health * (k || 1));
   }
 
   // Team outfit: gi dyed in the team colour, team pauldrons and a team-coloured floor ring.
@@ -103,6 +110,10 @@ export class Fighter {
     this.healLeft = 0;
     this.healRate = 0;
     this.poisonColor = 0x9dff3a;
+    this.downed = 0;          // seconds left to be revived (tournament); 0 = out for the round
+    this.reviveProgress = 0;
+    this.blockAt = -10;
+    this.lastBackstab = -10;
     this.intent = { mx: 0, mz: 0, block: false };
     this.model.root.position.copy(pos);
     this.model.root.rotation.y = facing;
@@ -117,6 +128,7 @@ export class Fighter {
   }
 
   setState(state, duration = 0) {
+    if (state === 'block' && this.state !== 'block' && this.state !== 'blockstun') this.blockAt = this.animTime;
     this.state = state;
     this.stateTime = 0;
     this.stateDuration = duration;
@@ -238,7 +250,7 @@ export class Fighter {
       if (Math.random() < dt * 12) world.effects.sparks(this.pos.x, 1.2, this.pos.z, this.poisonColor, 2, 1.5);
     }
     // fire ring (sudden death)
-    if (world.ringRadius < 30) {
+    if (world.ringRadius < 90) {
       const d = Math.hypot(this.pos.x, this.pos.z);
       if (d > world.ringRadius) {
         this.applyDamage(dt * 9, null, world, true);
@@ -320,7 +332,11 @@ export class Fighter {
     }
   }
 
+  // Attacking out of a cloak reveals you.
+  uncloak() { if (this.vanish > 0) { this.vanish = 0; this.updateBuffVisuals(); } }
+
   startAttack(name, world) {
+    this.uncloak();
     const move = MOVES[name];
     this.move = move;
     this.moveName = name;
@@ -386,7 +402,7 @@ export class Fighter {
     const m = this.move;
     const power = this.dmgMult();
     for (const o of world.fighters) {
-      if (o === this || !o.alive || this.hitSet.has(o.id) || allies(this, o)) continue;
+      if (o === this || !o.alive || this.hitSet.has(o.id) || spared(this, o, world)) continue;
       const dx = o.pos.x - this.pos.x, dz = o.pos.z - this.pos.z;
       const d = Math.hypot(dx, dz);
       if (d > m.range * this.def.scale + o.radius) continue;
@@ -404,6 +420,7 @@ export class Fighter {
   }
 
   startSpecial(world) {
+    this.uncloak();
     this.energy -= SPECIAL_COST;
     this.sprinting = false;
     this.setState('special');
@@ -467,6 +484,7 @@ export class Fighter {
       world.events.emit('skillFail', { fighter: this, skill: id, reason: this.cooldowns[idx] > 0 ? 'cooldown' : 'mana' });
       return false;
     }
+    this.uncloak();
     this.energy -= sk.cost;
     this.cooldowns[idx] = sk.cooldown;
     this.skill = sk;
@@ -516,14 +534,39 @@ export class Fighter {
   // Returns 'hit', 'block' or 'ignored'.
   receiveHit(src, h, world) {
     if (!this.alive || this.invuln > 0 || this.vanish > 0) return 'ignored';
-    if (allies(src, this)) return 'ignored';
+    const friendly = allies(src, this);
+    if (friendly && !world.friendlyFire) return 'ignored';
     if (this.state === 'knockdown' || this.state === 'getup') return 'ignored';
     const blocking = (this.state === 'block' || this.state === 'blockstun') && !h.unblockable;
     const toSrcX = -h.dx, toSrcZ = -h.dz;
     const f = this.forward();
-    const facingSrc = f.x * toSrcX + f.z * toSrcZ > 0.2;
+    // which way the victim faces relative to the attacker: hits from behind are backstabs
+    let facing = f.x * toSrcX + f.z * toSrcZ;
+    if (src && src !== this) {
+      const sx = src.pos.x - this.pos.x, sz = src.pos.z - this.pos.z, sd = Math.hypot(sx, sz);
+      if (sd > 0.05) facing = (f.x * sx + f.z * sz) / sd;
+    }
+    const facingSrc = facing > 0.2;
+    const melee = h.kind === 'punch' || h.kind === 'kick' || h.kind === 'shadow' || !!h.melee;
+    const backstab = !!src && src !== this && !friendly && melee && facing < COMBAT.backstabDot;
     this.lastAttacker = src;
     this.lastHitTime = world.time;
+
+    // parry: a block raised a split second before a melee blow lands turns it back on the attacker
+    if (blocking && facingSrc && melee && src && src !== this && this.state === 'block' && this.animTime - this.blockAt < COMBAT.parryWindow) {
+      this.guard = Math.min(GUARD_MAX, this.guard + 25);
+      this.energy = Math.min(ENERGY_MAX, this.energy + 10);
+      this.hitstop = 0.08;
+      if (src.alive) {
+        src.setState('hitstun', COMBAT.parryStagger);
+        src.vel.x = h.dx * -5; src.vel.z = h.dz * -5;
+        src.hitstop = 0.08;
+      }
+      world.effects.sparks(this.pos.x - h.dx * 0.4, 1.4, this.pos.z - h.dz * 0.4, 0xffe27a, 22, 6);
+      world.effects.ring(this.pos.x, 1.2, this.pos.z, 0xffe27a, 1.8, 0.35);
+      world.events.emit('parry', { fighter: this, by: src });
+      return 'block';
+    }
 
     if (blocking && facingSrc) {
       const chip = h.damage * 0.12;
@@ -549,7 +592,15 @@ export class Fighter {
     }
 
     let dmg = h.damage;
-    const armored = this.armor > 0 || this.shield > 0;
+    if (friendly) dmg *= COMBAT.friendlyFireMult;
+    if (backstab) {
+      dmg *= COMBAT.backstabMult;
+      world.effects.sparks(this.pos.x, 1.5, this.pos.z, 0xff2a2a, 18, 5);
+      world.events.emit('backstab', { fighter: this, by: src, quiet: world.time - src.lastBackstab < 2 });
+      src.lastBackstab = world.time;
+    }
+    if (world.teamMode && this.team >= 0 && this.inFormation(world)) dmg *= COMBAT.formationGuard;
+    const armored = (this.armor > 0 || this.shield > 0) && !backstab;
     if (this.armor > 0) dmg *= 0.6;
     if (this.shield > 0) {
       // the barrier soaks damage first and stops the flinch while it holds
@@ -615,6 +666,30 @@ export class Fighter {
     return 'hit';
   }
 
+  // A living teammate close by: everyone in formation takes less damage.
+  inFormation(world) {
+    for (const o of world.fighters) {
+      if (o !== this && o.alive && allies(this, o) && Math.hypot(o.pos.x - this.pos.x, o.pos.z - this.pos.z) < COMBAT.formationRange) return true;
+    }
+    return false;
+  }
+
+  // Back on your feet after a teammate's revive.
+  revive(world, by) {
+    this.alive = true;
+    this.downed = 0;
+    this.reviveProgress = 0;
+    this.hp = Math.round(this.maxHp * COMBAT.reviveHp);
+    this.setState('getup', 0.6);
+    this.invuln = 1.4;
+    this.vel.set(0, 0, 0);
+    this.model.ring.visible = true;
+    this.model.ring.material.opacity = 0.75;
+    world.effects.ring(this.pos.x, 0.3, this.pos.z, 0x7affc8, 2.2, 0.6);
+    world.effects.sparks(this.pos.x, 1.2, this.pos.z, 0x7affc8, 30, 4);
+    world.events.emit('revive', { fighter: this, by });
+  }
+
   applyDamage(amount, src, world, quiet) {
     if (!this.alive || amount <= 0) return;
     // once a round is decided nothing (fire ring, poison, a stray projectile) can hurt the survivors
@@ -630,10 +705,13 @@ export class Fighter {
       this.sprinting = false;
       this.updateBuffVisuals();
       const killer = src && src !== this ? src : (this.lastAttacker && world.time - this.lastHitTime < 6 ? this.lastAttacker : null);
-      if (killer) killer.stats.kos++;
+      if (killer && !allies(killer, this)) killer.stats.kos++;
       this.facing = src ? angleTo(this.pos.x, this.pos.z, src.pos.x, src.pos.z) : this.facing;
       this.setState('ko');
-      world.events.emit('ko', { fighter: this, by: killer });
+      // tournament: a downed fighter waits for a teammate to pull them up
+      this.downed = world.reviveOn && this.team >= 0 ? COMBAT.downedTime : 0;
+      this.reviveProgress = 0;
+      world.events.emit('ko', { fighter: this, by: killer, downed: this.downed > 0, betrayed: !!killer && allies(killer, this) });
       world.onKO?.(this, killer);
     }
   }

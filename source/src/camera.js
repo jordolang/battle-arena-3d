@@ -13,6 +13,8 @@ export class CameraRig {
     this.mode = 'fight';     // 'fight' | 'orbit' | 'winner'
     this.orbitAngle = 0;
     this.winner = null;
+    this.follow = null;      // on the big map a player's camera stays on their own fight
+    this.maxDistance = 36;
     this.forward = new THREE.Vector3(0, 0, -1);
     this.right = new THREE.Vector3(1, 0, 0);
     this._target = new THREE.Vector3();
@@ -30,7 +32,9 @@ export class CameraRig {
 
   frame(fighters, dt) {
     const alive = fighters.filter((f) => f.alive);
-    const set = alive.length ? alive : fighters;
+    let set = alive.length ? alive : fighters;
+    const me = this.follow;
+    if (me && me.alive) set = set.filter((f) => f === me || Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) < 14);
     if (!set.length) return;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const f of set) {
@@ -40,7 +44,7 @@ export class CameraRig {
     const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
     const spread = Math.max(maxX - minX, (maxZ - minZ) * 1.35);
     const aspect = this.camera.aspect;
-    const want = THREE.MathUtils.clamp(7.5 + spread * (aspect < 1 ? 1.9 : 1.05), 9.5, 36);
+    const want = THREE.MathUtils.clamp(7.5 + spread * (aspect < 1 ? 1.9 : 1.05), 9.5, this.maxDistance);
     const k = 1 - Math.exp(-dt * 3);
     this._target.set(cx, 1.0, cz + 1.2);
     this.focus.lerp(this._target, k);

@@ -1,5 +1,6 @@
 // Entry point: wires keyboard, menus, game and the audio layer.
 import { Keyboard, loadBindings } from './input.js';
+import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
@@ -96,12 +97,14 @@ function boot() {
   // test and debugging hooks
   window.__arena = { game, menus, events, bindings, session, audio };
   if (params.has('autotest')) {
+    // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));
-    menus.setup.count = n;
-    menus.setup.slots.forEach((s) => { s.control = 'cpu'; });
-    menus.setup.winsNeeded = +params.get('wins') || 1;
-    menus.setup.suddenDeath = +params.get('sd') || 30;
-    menus.runAct('start');
+    const tc = Math.max(0, Math.min(4, +params.get('teams') || 0));
+    menus.cb.onStart({
+      mode: params.get('mode') || 'cpu', winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
+      teams: { count: tc, names: TEAM_DEFAULT_NAMES.slice(0, tc) },
+      slots: Array.from({ length: n }, (_, i) => ({ control: 'cpu', fighter: i % ROSTER.length, team: tc ? i % tc : -1 })),
+    });
   }
 }
 
@@ -115,7 +118,7 @@ function setQuality(game, q) {
   game.renderer.setPixelRatio(game.pixelRatio);
   const shadows = q !== 'low';
   game.renderer.shadowMap.enabled = shadows;
-  game.arena.moon.castShadow = shadows;
+  for (const a of Object.values(game.arenas)) a.moon.castShadow = shadows;
   game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
   game.resize();
 }

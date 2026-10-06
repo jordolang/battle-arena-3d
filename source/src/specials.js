@@ -1,6 +1,6 @@
 // Special moves, projectiles and delayed hazards (lightning).
 import * as THREE from 'three';
-import { wrapAngle, allies } from './fighter.js';
+import { wrapAngle, spared } from './fighter.js';
 import { SKILLS } from './config.js';
 
 const projGeo = new THREE.SphereGeometry(0.26, 16, 12);
@@ -46,7 +46,7 @@ export class Projectile {
       return;
     }
     for (const f of world.fighters) {
-      if (f === this.owner || !f.alive || allies(this.owner, f) || f.vanish > 0) continue;
+      if (f === this.owner || !f.alive || spared(this.owner, f, world) || f.vanish > 0) continue;
       const dx = f.pos.x - this.pos.x, dz = f.pos.z - this.pos.z;
       if (Math.hypot(dx, dz) < this.radius + f.radius && Math.abs(f.pos.y + 1 - this.pos.y) < 1.2) {
         this.hit(f, this, world);
@@ -87,7 +87,7 @@ export class Projectile {
 
 function hitAll(f, world, radius, cb) {
   for (const o of world.fighters) {
-    if (o === f || !o.alive || allies(f, o)) continue;
+    if (o === f || !o.alive || spared(f, o, world)) continue;
     const dx = o.pos.x - f.pos.x, dz = o.pos.z - f.pos.z;
     const d = Math.hypot(dx, dz);
     if (d <= radius + o.radius) cb(o, d, d > 1e-3 ? dx / d : 1, d > 1e-3 ? dz / d : 0);
@@ -231,7 +231,7 @@ function skillHit(sk, pow, dx, dz, extra = {}) {
     damage: sk.damage * pow, knock: sk.knock ?? 4, hitstun: 0.45, heavy: sk.damage >= 10, knockdown: !!sk.knockdown,
     stun: sk.stun, slow: sk.slow, freeze: sk.freeze, unblockable: !!sk.unblockable, drain: sk.drain,
     poison: sk.poison || sk.burn || sk.bleed, poisonColor: sk.burn ? 0xff7a1c : sk.bleed ? 0xff2a2a : undefined,
-    dx, dz, kind: 'skill', color: sk.color, ...extra,
+    dx, dz, kind: 'skill', melee: sk.type === 'wave' || sk.type === 'leap', color: sk.color, ...extra,
   };
 }
 
@@ -305,7 +305,7 @@ export function executeSkill(f, id, world) {
       world.effects.streak(sx, sz, ex, ez, sk.color);
       world.effects.sparks(ex, 1.2, ez, sk.color, 18, 5);
       for (const o of world.fighters) {
-        if (o === f || !o.alive || allies(f, o) || o.vanish > 0) continue;
+        if (o === f || !o.alive || spared(f, o, world) || o.vanish > 0) continue;
         const wx = o.pos.x - f.pos.x, wz = o.pos.z - f.pos.z;
         const t = wx * fw.x + wz * fw.z;
         if (t < 0 || t > len + o.radius) continue;
@@ -330,7 +330,7 @@ export function executeSkill(f, id, world) {
           if (sk.fx === 'meteor') w.effects.dust(tx, tz, 3);
           w.shake(0.35);
           for (const o of w.fighters) {
-            if (o === f || !o.alive || allies(f, o) || o.vanish > 0) continue;
+            if (o === f || !o.alive || spared(f, o, w) || o.vanish > 0) continue;
             const dx = o.pos.x - tx, dz = o.pos.z - tz, d = Math.hypot(dx, dz);
             if (d < sk.radius + o.radius) {
               const n = d > 1e-3 ? 1 / d : 0;

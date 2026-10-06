@@ -119,7 +119,10 @@ export class Gamepads {
     // presses that drive a menu are not counted for the fight, so picking Resume with A does not also jump
     if (!inMenu) st.presses.set(code, (st.presses.get(code) || 0) + 1);
     if (code === 'b9') { this.emitKey(mode === 'menu' ? 'Enter' : 'Escape'); return; }
-    if (code === 'b8') { this.emitKey('Escape'); return; }
+    // View goes back in menus; in a fight the page decides (pause, or skip a tutorial lesson)
+    if (code === 'b8') { this.emitKey(inMenu ? 'Escape' : 'View'); return; }
+    // stick clicks are free by default; the practice room uses them for its own commands
+    if (!inMenu && (code === 'b10' || code === 'b11') && !ACTIONS.some((a) => this.map[a] === code)) { this.emitKey(code === 'b10' ? 'L3' : 'R3'); return; }
     if (inMenu || mode === 'spectate') {
       if (NAV[code]) { st.rep.set(code, performance.now() + REPEAT_DELAY); this.emitKey(NAV[code]); return; }
     }

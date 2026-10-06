@@ -13,12 +13,14 @@ export const ARENA = {
 };
 
 // Game modes. Fight is a quick match against the CPU, Fight online is the 30-second public queue,
-// Tournament is team-against-team on the Badlands with friendly fire and revives.
+// Tournament is team-against-team on the Badlands with friendly fire and revives, Training is the tutorial and practice room.
 // durability multiplies every fighter's health so fights last longer and team tactics matter.
 export const MODES = {
   cpu:        { label: 'Versus CPU', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
   queue:      { label: 'Online brawl', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
   tournament: { label: 'Tournament', map: 'badlands', durability: 2.6, powerups: true, friendlyFire: true, revive: true },
+  // tutorial and practice room: you and a training dummy, nobody can be knocked out, gear is placed by the lesson
+  practice:   { label: 'Training', map: 'coliseum', durability: 1, powerups: true, friendlyFire: false, revive: false },
 };
 export function modeRules(mode) { return { mode, ...(MODES[mode] || MODES.cpu) }; }
 

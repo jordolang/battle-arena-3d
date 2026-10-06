@@ -4,6 +4,7 @@ import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BIND
   TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
 import { saveBindings, devices } from './input.js';
 import { padLabel, PAD_RESERVED } from './padmap.js';
+import { lookupGroup, donateUrl, REWARDS } from './fundraiser.js';
 
 const SETUP_KEY = 'battle-arena.setup.v1';
 const GROUP_KEY = 'battle-arena.fundraiser-group.v1';
@@ -34,7 +35,7 @@ export function loadSetup() {
     return { ...d, ...s, teams, slots: d.slots.map((slot, i) => ({ ...slot, ...(s.slots?.[i] || {}) })) };
   } catch { return d; }
 }
-function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
+export function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 
 const SUDDEN = [0, 45, 60, 75, 90, 120];
 const DIFFS = Object.keys(DIFFICULTY);
@@ -82,7 +83,13 @@ export class Menus {
       this.groupErr.textContent = '';
       this.groupEl.classList.remove('bad');
       try { localStorage.setItem(GROUP_KEY, this.groupEl.value.trim()); } catch { /* ignore */ }
+      clearTimeout(this.teamTimer);
+      this.teamTimer = setTimeout(() => this.refreshTeam(), 500);
     });
+    // the group's fundraiser on the José Madrid Salsa site: goal progress, the donate link and its reward
+    this.teamEl = this.screens.title.querySelector('.fr-team');
+    this.fundraiser = null;
+    this.refreshTeam();
     keyboard.onKey((e) => this.onKey(e));
     document.addEventListener('click', (e) => {
       if (e.detail === 0) return; // keyboard-generated click; onKey already handled it
@@ -105,6 +112,7 @@ export class Menus {
     if (!name) return;
     if (name === 'setup') this.renderSetup();
     if (name === 'controls') this.renderControls();
+    if (name === 'title' && this.fundraiser && Date.now() - (this.teamAt || 0) > 60000) { this.teamAt = Date.now(); this.refreshTeam(); }
     this.cb.onShow?.(name);
     // on the title, start on Fight once a fundraising group is filled in, otherwise on the group field
     const first = name === 'title' && this.group ? this.screens.title.querySelector('.menu-list .nav') : this.screens[name].querySelector('.nav');
@@ -169,6 +177,61 @@ export class Menus {
   }
 
   get group() { return this.groupEl.value.trim(); }
+  // the cosmetic reward the player's group has earned (0 none, 1 Silver Laurel, 2 Golden Crown)
+  get rewardTier() { return this.fundraiser?.tier || 0; }
+
+  // Looks the typed group up on the fundraising site and redraws the team card under the group field.
+  async refreshTeam() {
+    const typed = this.group;
+    const ask = (this.teamAsk = (this.teamAsk || 0) + 1);
+    const found = typed ? await lookupGroup(typed) : { team: null, tier: 0 };
+    if (ask !== this.teamAsk) return; // the player kept typing
+    this.fundraiser = found;
+    this.renderTeam(typed, found);
+  }
+
+  renderTeam(typed, found) {
+    const el = this.teamEl;
+    const team = found?.team || null;
+    const tier = found?.tier || 0;
+    const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+    el.querySelector('.fr-team-name').textContent = team ? team.name : '';
+    el.querySelector('.fr-team-amt').textContent = team?.goal ? `${money(team.raised)} of ${money(team.goal)}` : '';
+    const bar = el.querySelector('.fr-bar');
+    bar.hidden = !team?.goal;
+    if (team?.goal) bar.querySelector('i').style.width = `${Math.min(100, (team.raised / team.goal) * 100)}%`;
+    el.classList.toggle('goal', tier === 2);
+    const reward = el.querySelector('.fr-reward');
+    if (team) {
+      const next = REWARDS[tier + 1];
+      reward.innerHTML = [
+        tier ? `Unlocked: <b>${REWARDS[tier].label}</b>, ${esc(REWARDS[tier].hint)}.` : '',
+        next && team.goal ? `${tier ? 'Next' : 'Reward'}: <b>${next.label}</b> at ${money(team.goal * next.at)} raised.` : '',
+        tier === 2 ? 'Your group reached its goal!' : '',
+      ].filter(Boolean).join(' ');
+    } else if (typed && found) {
+      reward.textContent = 'We could not find that group on the José Madrid Salsa fundraising site this month, so goal rewards are off. You can still find it and donate there.';
+    } else if (typed) {
+      reward.textContent = 'The fundraising site could not be reached just now, so your group\'s goal is not shown.';
+    } else {
+      reward.textContent = 'Fundraising groups that reach half their goal unlock a Silver Laurel for their fighters, and a Golden Crown at the full goal.';
+    }
+    const label = team ? `Donate to ${team.name}` : typed && found ? 'Find your group' : 'Support a fundraiser';
+    for (const b of document.querySelectorAll('.fr-donate')) {
+      b.textContent = b.closest('.share-row') && !team ? 'Support a fundraiser' : label;
+      b.title = team ? `Opens ${team.name}'s page on the José Madrid Salsa fundraising site` : 'Opens the José Madrid Salsa fundraising site';
+    }
+  }
+
+  // Donations happen on the fundraising site's own team page, in a new tab so the game keeps running.
+  donate() {
+    const url = donateUrl(this.fundraiser?.team);
+    const w = window.open(url, '_blank');
+    if (w) { w.opener = null; return; }
+    // a blocked pop-up: show the address instead of leaving the game
+    const msg = this.screens[this.active]?.querySelector('.share-msg') || this.teamEl.querySelector('.fr-reward');
+    if (msg) msg.innerHTML = `Open <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> to donate.`;
+  }
 
   // true when a fundraising group has been entered; otherwise sends the player back to the field on the title
   requireGroup() {
@@ -190,6 +253,7 @@ export class Menus {
     if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
+      case 'to-training': this.show('training'); break;
       case 'to-title': this.show('title'); break;
       case 'to-controls': this.controlsReturn = this.active; this.show('controls'); break;
       case 'controls-back': this.show(this.controlsReturn || 'title'); break;
@@ -201,6 +265,7 @@ export class Menus {
       case 'rebind': this.beginRebind(el); break;
       case 'padbind': this.beginPadRebind(el); break;
       case 'reset-pad': this.pads?.resetMap(); this.renderControls(); this.focusAct('reset-pad'); break;
+      case 'donate': this.donate(); break;
       case 'share-fb': shareOnFacebook(this.shareContext()); break;
       case 'share-link': {
         const msg = this.screens[this.active]?.querySelector('.share-msg');
@@ -237,7 +302,7 @@ export class Menus {
     return {
       mode: 'cpu', winsNeeded: s.winsNeeded, difficulty: s.difficulty, suddenDeath: s.suddenDeath, quality: s.quality,
       teams: { count: 0, names: [] },
-      slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i < this.players ? i : 'cpu', team: -1 })),
+      slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i < this.players ? i : 'cpu', team: -1, reward: i === 0 ? this.rewardTier : 0 })),
     };
   }
 

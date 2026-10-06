@@ -172,6 +172,23 @@ kbd {
 @keyframes fr-shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 .fundraiser .fr-error:empty { display: none; }
 .field input.bad { border-color: #ff6a4a; }
+.fr-team { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid rgba(255, 200, 97, 0.2); padding-top: 8px; }
+.fr-team-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.fr-team-name { color: var(--bone); font-size: 17px; letter-spacing: 0.04em; }
+.fr-team-name:empty, .fr-team-amt:empty, .fr-reward:empty { display: none; }
+.fr-team-amt { color: var(--ash); font-size: 15px; white-space: nowrap; }
+.fr-bar { position: relative; height: 8px; border-radius: 4px; background: rgba(239, 228, 210, 0.14); overflow: hidden; }
+.fr-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--ember), var(--gold)); transition: width 0.6s ease; }
+.fr-bar .fr-mark { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(0, 0, 0, 0.55); }
+.fr-team.goal .fr-bar i { background: linear-gradient(90deg, #ffd56a, #fff1b8); box-shadow: 0 0 10px rgba(255, 200, 97, 0.8); }
+.fundraiser .fr-reward { font-size: 15px; color: var(--ash); }
+.fundraiser .fr-reward b { color: var(--gold); }
+.fr-team .fr-donate {
+  align-self: flex-start; font-family: var(--ui); font-weight: 700; font-size: 16px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 7px 16px; border-radius: 4px; background: var(--gold); color: #2a1606; border: 1px solid var(--gold);
+}
+.fr-team .fr-donate:focus, .fr-team .fr-donate:hover { background: #ffdc8f; border-color: #fff; }
+.share-row .fr-donate { border-color: var(--gold); color: var(--gold); }
 .tagline { font-size: 19px; color: var(--ash); margin: 0; max-width: 34ch; line-height: 1.35; }
 @media (max-height: 960px) { .title-wrap .tagline { display: none; } .title-wrap { gap: 12px; } }
 .menu-list { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-top: 8px; }
@@ -615,3 +632,51 @@ body[data-input="touch"] .legend-touch { display: block; }
   #focus-note { display: none !important; }
 }
 .slot .who .how { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ash); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 9em; }
+/* ---------- Training: tutorial coach and practice room ---------- */
+#coach {
+  position: absolute; left: 16px; top: 118px; width: min(360px, calc(100% - 32px)); padding: 10px 14px 12px;
+  background: linear-gradient(180deg, rgba(14, 10, 12, 0.88), rgba(14, 10, 12, 0.72)); border: 1px solid var(--plate-edge);
+  border-left: 3px solid var(--gold); border-radius: 3px; pointer-events: auto; text-shadow: 0 1px 2px #000;
+  transition: border-color 0.3s;
+}
+#coach.done { border-left-color: #7dff6b; }
+.coach-head { display: flex; align-items: baseline; gap: 10px; }
+.coach-n { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); }
+.coach-title { font-family: var(--display); font-size: 26px; line-height: 1.05; color: var(--gold); }
+.coach-text { margin: 6px 0 8px; font-size: 16px; line-height: 1.35; color: var(--bone); }
+.coach-text kbd, .coach-btn kbd { white-space: nowrap; }
+kbd.pr-gamepad { border-radius: 10px; padding: 0 0.5em; }
+kbd.pr-touch { border-radius: 999px; padding: 0 0.55em; background: rgba(255, 200, 97, 0.18); border-color: rgba(255, 200, 97, 0.5); }
+.coach-prog { display: flex; align-items: center; gap: 10px; }
+.coach-bar { flex: 1; height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; }
+.coach-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--ember), var(--gold)); transform-origin: left; transform: scaleX(0); transition: transform 0.2s; }
+#coach.done .coach-bar i { background: #7dff6b; }
+.coach-count { min-width: 3.4em; text-align: right; font-weight: 700; font-size: 14px; color: var(--ash); }
+#coach.done .coach-count { color: #7dff6b; }
+.coach-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.coach-btn {
+  font: 600 13px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone); cursor: pointer;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(239, 228, 210, 0.22); border-radius: 3px; padding: 4px 9px; min-height: 30px;
+}
+.coach-btn:hover { border-color: var(--gold); color: var(--gold); }
+.coach-btn kbd { margin-right: 6px; }
+.coach-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.coach-stats div { display: flex; flex-direction: column; align-items: center; padding: 4px 2px; background: rgba(0, 0, 0, 0.3); border-radius: 2px; }
+.coach-stats b { font-family: var(--display); font-size: 26px; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; }
+.coach-stats span { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ash); text-align: center; }
+#screen-training .tr-fighter { width: 100%; margin: 4px 0 2px; }
+#screen-training .tr-desc { margin: 0 0 12px; }
+@media (max-width: 700px) {
+  #coach { top: 76px; left: 8px; width: calc(100% - 16px); padding: 8px 10px 10px; }
+  .coach-title { font-size: 21px; }
+  .coach-text { font-size: 14px; }
+}
+/* tutorial coach on a touch screen: small, top-left under the pause button, clear of the thumbstick */
+body.touch-fight #coach { top: calc(60px + env(safe-area-inset-top)); left: calc(10px + env(safe-area-inset-left)); width: min(280px, 29vw); padding: 6px 10px 8px; }
+body.touch-fight .coach-title { font-size: 19px; }
+body.touch-fight .coach-text { font-size: 13px; margin: 4px 0 6px; }
+body.touch-fight .coach-stats b { font-size: 18px; }
+body.touch-fight .coach-btn { min-height: 34px; }
+body.touch-fight .coach-btn kbd { display: none; }
+@media (max-height: 500px) { body.touch-fight .coach-text { font-size: 12px; line-height: 1.25; } body.touch-fight .coach-head .coach-n { display: none; } }
+@media (orientation: portrait) and (max-width: 700px) { body.touch-fight #coach { top: 31%; width: calc(100% - 20px); } }

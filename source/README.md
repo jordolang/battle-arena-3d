@@ -4,6 +4,8 @@ A 3D last-one-standing brawler in Three.js with three ways to play:
 - **Fight**: you against 1 to 7 CPU fighters in the coliseum.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
+- **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
+  guns and spells) and a free practice room, both against a training dummy that cannot be knocked out.
 
 Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
 Power-ups, backstabs, parries and (in tournaments) friendly fire and revives make positioning and teamwork matter.
@@ -23,6 +25,30 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   code, and Fight online and fighting in a tournament stay locked until it is filled in (Fight versus the CPU and watching a tournament
   do not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
+- **Donate to your team**: under the group field the title screen shows the group's fundraiser from the José Madrid
+  Salsa fundraising site: how much it has raised toward its goal and a **Donate to (group)** button that opens the
+  group's own page (`https://fundraising.josemadrid.net/fundraise/<slug>`) in a new tab, where the site takes the
+  donation. The game never handles payments. The group is matched by its name, its school or its page name; a fundraiser
+  code is first turned into its group's name. A group that isn't found gets **Find your group** (the site's group list).
+  The results screen has the same button.
+- **Goal rewards (cosmetic only)**: a group that has raised half its goal unlocks the **Silver Laurel** (a silver laurel
+  wreath and a silver ring round the fighter's floor marker); at the full goal, the **Golden Crown** (a golden crown,
+  a gold ring and gold-glinting trim). The player's fighter wears it versus the CPU, online and in tournaments, and
+  its name tag gets a ❦ or ♛. Rewards change nothing about how a fighter plays.
+- Where the numbers come from: `api/fundraisers.js` (a Vercel function next to `api/share.js`) reads this month's team
+  standings from the fundraising site's public arena snapshot (`/api/fundraiser/arena/<YYYY-MM>/state`, the same data its
+  spectator arena shows) and passes on each team's name, page, goal and amount raised, cached for a minute. The hosted game
+  asks it at `/api/fundraisers`; the single-file copy asks the hosted one. `?fundraisers-api=URL` points at another
+  copy for testing, and the `FUNDRAISING_SITE_URL` environment variable moves the function to another fundraising site.
+
+## Training
+- The tutorial shows one lesson at a time in a panel on the left and moves on when you have done it (Tab skips a lesson).
+  The dummy stands still, holds its guard or throws slow punches, depending on the lesson.
+- The practice room shows your last hit, the current combo and your best combo. Tab changes what the dummy does,
+  G lays out two pieces of gear at a time, R puts you both back in the middle. Mana refills itself there.
+- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, the real (and rebound) buttons of the
+  connected controller, the on-screen button names on a touch screen. `main.js` registers the gamepad and touch labels.
+  On a controller View skips a lesson (or cycles the dummy); in the practice room L3 lays out gear and R3 resets.
 
 ## Fight online: the 30-second queue
 - Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
@@ -80,6 +106,32 @@ several tabs of one browser and no network, or `?peerserver=host:port` to use yo
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
+
+### Game controllers (`src/gamepad.js`, `src/padmap.js`)
+Up to four pads (Xbox, PlayStation, Switch Pro, most USB/Bluetooth pads in standard mapping). Pad N plays as PN by
+default; the Controls screen lists connected pads, lets each be seated as P1-P4, rebinds every action (shared by all
+pads) and turns rumble on or off. A pad also steers that player's keyboard section, so mixing works.
+
+| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Pause |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | Start or View |
+
+Menus: D-pad or stick to move (held directions repeat), A select, B back, LB/RB change a value, Start pauses or
+selects. Presses that drive a menu are not counted in the fight, so picking Resume with A does not also jump.
+Unplugging a pad mid-fight pauses a local match. Online, any connected pad steers your fighter. When you are out,
+hold A to fast-forward. Rumble: hits (harder for heavy ones), blocks, parries, guard breaks, knockouts, "Fight!".
+
+### Touch screens (`src/touch.js`)
+Shown during a fight on phones and tablets (Controls: Auto, Always on, Off; Small/Medium/Large buttons). The left
+thumb lands anywhere on the left side and becomes a floating analog stick. The right side has Punch, Kick, Jump,
+Block and Dodge (hold both), Special, the fighter's three skills (named, with a cooldown sweep, dimmed without mana)
+and Use/Next for the item bar; tapping a slot on the item bar fires it. Several fingers work at once and a thumb can
+slide from one button to the next. Pause and full-screen buttons sit top-left; upright phones get a narrower layout
+and a hint to turn sideways. Keyboard or pad input hides the overlay again (laptops with touch screens).
+
+### Couch play
+Fight setup has **Players here** (1-4). Each local player uses their keyboard section and/or their controller;
+the fighter list shows which device each one has, and the opening hints show the glyphs of the device in use.
 
 Combos: punch ×3 (ends in a hook), punch-punch-kick, kick-kick (knockdown roundhouse), jump then kick (dive kick).
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
@@ -142,7 +194,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
   (sculpted faces, hair, hands and muscled limbs merged per material), poses, breathing, blinking and gaze
-- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
+- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard, device registry and human controller (keys + pads + touch)
 - `items.js` weapon, gun and armor meshes and the ability bar icons
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX

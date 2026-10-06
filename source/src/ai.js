@@ -1,7 +1,7 @@
 // CPU opponents. Each AI reads the same world state a player sees and
 // produces the same intent a keyboard would, so it can be swapped for a
 // network-driven controller later without touching fighter code.
-import { DIFFICULTY, SPECIAL_COST, SKILLS, COMBAT } from './config.js';
+import { DIFFICULTY, SPECIAL_COST, SKILLS, COMBAT, POWERUPS, BELT_SIZE } from './config.js';
 import { wrapAngle, allies } from './fighter.js';
 
 const PREFERRED_SPECIAL_RANGE = {
@@ -142,6 +142,8 @@ export class AIController {
 
     // 3b) skills
     if (Math.random() < this.p.special * 0.5 && this.trySkill(me, T, dist, nx, nz, world)) return;
+    // 3c) guns and spell tomes from the ability bar
+    if (me.items.length && Math.random() < 0.35 + this.p.special * 0.4 && this.tryItem(me, T, dist, nx, nz, world)) return;
 
     const lowHp = me.hp / me.maxHp < 0.25;
     const reach = 1.55 * me.def.scale + T.radius;
@@ -257,6 +259,33 @@ export class AIController {
     return false;
   }
 
+  // Fire a gun or cast a spell tome when the range suits it. Returns true if used.
+  tryItem(me, T, dist, nx, nz, world) {
+    const hurt = me.hp / me.maxHp;
+    for (let i = 0; i < me.items.length; i++) {
+      const sk = SKILLS[me.items[i].id];
+      if (!sk) continue;
+      let ok = false;
+      switch (sk.type) {
+        case 'bolt': ok = dist > (sk.count > 1 ? 1.5 : 2.5) && dist < sk.speed * sk.life * 0.85 && !this.lineBlocked(me, T, world); break;
+        case 'beam': ok = dist > 2 && dist < sk.length * 0.85 && !this.lineBlocked(me, T, world); break;
+        case 'smite': ok = dist > 3 && dist < sk.range * 0.9; break;
+        case 'nova': ok = dist < sk.radius * 0.8 && !(world.friendlyFire && this.allyNear(me, world, sk.radius + 0.5, Math.PI)); break;
+        case 'heal': ok = hurt < 0.45 && me.healLeft <= 0; break;
+      }
+      if (!ok) continue;
+      if (sk.type === 'bolt' || sk.type === 'beam') {
+        this.wantMove = { x: nx * 0.01, z: nz * 0.01 };
+        me.facing = Math.atan2(nx, nz) + (Math.random() - 0.5) * (1 - this.p.accuracy) * 0.5;
+      }
+      this.press('slot' + (i + 1), 0);
+      // keep shooting a little while the target stays lined up
+      if (sk.gun && Math.random() < this.p.aggression) this.press('slot' + (i + 1), sk.startup + sk.recovery + 0.05);
+      return true;
+    }
+    return false;
+  }
+
   // Living teammate within `range`, inside `arc` radians of `dir` (default: facing).
   allyNear(me, world, range, arc, dir = me.facing) {
     for (const o of world.fighters) {
@@ -310,7 +339,10 @@ export class AIController {
     // power-ups: go out of the way for healing when hurt, grab anything close otherwise
     const pk = world.pickups;
     if (pk?.enabled) {
-      const n = hurt < 0.5 ? pk.nearest(me.pos.x, me.pos.z, 15, ['heal', 'shield']) : pk.nearest(me.pos.x, me.pos.z, distT > 4 ? 6 : 2.5);
+      // gear is worth a detour: a weapon when bare-handed, guns and tomes while the bar has room
+      const gear = Object.keys(POWERUPS).filter((id) => (POWERUPS[id].weapon && !me.weapon) || (POWERUPS[id].item && me.items.length < BELT_SIZE) || (POWERUPS[id].armor && me.plate <= 0));
+      const n = hurt < 0.5 ? pk.nearest(me.pos.x, me.pos.z, 15, ['heal', 'shield', 'tome_heal'])
+        : (distT > 3.5 && pk.nearest(me.pos.x, me.pos.z, 10, gear)) || pk.nearest(me.pos.x, me.pos.z, distT > 4 ? 6 : 2.5);
       if (n && (enemy > 2.5 || n.d < 2)) { this.moveTo(n.pad.x, n.pad.z, me, world, n.d > 5); return true; }
     }
     // healing springs: retreat to one when badly hurt and nobody is close

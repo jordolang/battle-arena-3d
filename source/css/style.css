@@ -429,3 +429,83 @@ button { font: inherit; color: inherit; }
 .t-code-row .g { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bone); }
 .t-code-row .code-chip { letter-spacing: 0.08em; }
 .t-code-row .nav, .t-codes-list > .nav { font-size: 14px; }
+
+/* ---------- Ability bar (guns, spells, weapon, armor) ---------- */
+#hud.has-belt #hint { bottom: 128px; }
+#belts { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; align-items: flex-end; gap: 18px; padding: 0 12px; }
+.belt {
+  --pc: #fff; --orb: 86px; --slot: 50px;
+  position: relative; display: flex; align-items: flex-end; gap: 0;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.7));
+}
+#belts.compact .belt { --orb: 58px; --slot: 36px; }
+.belt-mid {
+  position: relative; margin: 0 -10px; padding: 7px 20px 5px; z-index: 0;
+  background: linear-gradient(180deg, #2a2320 0%, #15100f 60%, #0c0909 100%);
+  border: 1px solid #6b5332; border-top: 2px solid #b08a4a; border-radius: 6px 6px 3px 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.18), inset 0 -10px 22px rgba(0, 0, 0, 0.6);
+}
+.belt-row { display: flex; gap: 5px; align-items: center; }
+.belt .sep { width: 2px; align-self: stretch; margin: 4px 3px; background: linear-gradient(180deg, transparent, #8a6a3a, transparent); }
+.slot {
+  position: relative; width: var(--slot); height: var(--slot); border-radius: 4px;
+  background: radial-gradient(circle at 50% 40%, #241d1a, #0a0807 75%);
+  border: 1px solid #4d3c26; box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
+  display: grid; place-items: center; overflow: hidden;
+}
+.slot .ico { width: 74%; height: 74%; display: grid; place-items: center; }
+.slot.full, .slot.gear.on { border-color: #9a7a44; }
+.slot.full .ico svg, .slot.gear.on .ico svg { filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 2px rgba(0, 0, 0, 0.9)); }
+.slot.spell.full { background: radial-gradient(circle at 50% 45%, #2a2040, #0a0710 75%); }
+.slot.sel { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(255, 200, 97, 0.55), inset 0 0 10px rgba(0, 0, 0, 0.9); }
+.slot .key {
+  position: absolute; left: 3px; top: 1px; font-size: 11px; font-weight: 700; color: var(--bone);
+  text-shadow: 0 1px 2px #000; line-height: 1.2;
+}
+.slot .ct { position: absolute; right: 3px; bottom: 1px; font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
+.slot.fresh { animation: slotin 0.7s ease-out; }
+@keyframes slotin { 0% { transform: scale(1.5); box-shadow: 0 0 30px var(--gold); } 100% { transform: scale(1); } }
+.slot .dur { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 3px; background: rgba(0, 0, 0, 0.7); display: block; }
+.slot .dur i { display: block; height: 100%; background: linear-gradient(90deg, #d8c08a, #fff3c8); transform-origin: left; transform: scaleX(0); }
+.belt-foot { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; font-size: 13px; letter-spacing: 0.05em; color: var(--ash); white-space: nowrap; }
+.belt-who { font-weight: 700; color: var(--pc); text-transform: uppercase; }
+.belt-sel { flex: 1; color: var(--bone); overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.belt-keys kbd { font-size: 11px; }
+#belts.compact .belt-foot { font-size: 11px; }
+#belts.compact .belt-keys { display: none; }
+
+.orb {
+  position: relative; z-index: 1; width: var(--orb); height: var(--orb); border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 50% 55%, #1a0f0f, #050303 70%);
+  border: 3px solid #8a6a3a; box-shadow: 0 0 0 2px #2a1e12, inset 0 0 14px rgba(0, 0, 0, 0.9);
+}
+.orb .liquid { position: absolute; inset: 0; transition: transform 0.25s ease-out; }
+.orb.hp .liquid { background: radial-gradient(circle at 40% 30%, #ff6a5a, #c01818 45%, #5a0606 90%); }
+.orb.mp .liquid { background: radial-gradient(circle at 40% 30%, #8ab4ff, #2850d8 45%, #0a1a5a 90%); }
+.orb::after { /* glass highlight */
+  content: ''; position: absolute; left: 18%; top: 8%; width: 46%; height: 30%; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 70%);
+}
+.orb span {
+  position: absolute; inset: 0; display: grid; place-items: center; z-index: 1;
+  font-weight: 700; font-size: calc(var(--orb) * 0.24); color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000;
+}
+.belt.low .orb.hp { animation: pulse 0.6s infinite alternate; }
+
+.belt-toast {
+  position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translate(-50%, 10px); opacity: 0;
+  display: flex; align-items: center; gap: 12px; padding: 8px 18px 8px 10px; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(30, 22, 18, 0.95), rgba(12, 9, 8, 0.95));
+  border: 1px solid #9a7a44; border-radius: 5px; transition: opacity 0.35s, transform 0.35s; pointer-events: none;
+}
+.belt-toast.on { opacity: 1; transform: translate(-50%, 0); animation: toastin 0.45s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes toastin { from { transform: translate(-50%, 0) scale(1.35); filter: brightness(2); } }
+.belt-toast .t-ico { width: 46px; height: 46px; }
+.belt-toast .t-ico svg { filter: drop-shadow(0 0 8px currentColor); }
+.belt-toast .t-txt { display: flex; flex-direction: column; line-height: 1.15; }
+.belt-toast small { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); }
+.belt-toast b { font-family: var(--display); font-weight: 500; font-size: 26px; letter-spacing: 0.02em; }
+.belt-toast b.broke { font-family: var(--ui); font-size: 16px; color: #ff8a6a; text-transform: uppercase; letter-spacing: 0.08em; }
+.belt-toast span { font-size: 13px; color: var(--bone); }
+#belts.compact .belt-toast b { font-size: 18px; }
+@media (max-width: 720px) { .belt { --orb: 60px; --slot: 38px; } .belt-keys { display: none; } }

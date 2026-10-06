@@ -1,6 +1,7 @@
 // In-fight overlay: fighter cards, floating name tags, announcer, KO feed.
 import * as THREE from 'three';
-import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, COMBAT, keyLabel } from './config.js';
+import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, COMBAT, WEAPONS, POWERUPS, BELT_SIZE, ARMOR_POINTS, keyLabel } from './config.js';
+import { itemIcon } from './items.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -18,6 +19,10 @@ export class Hud {
     this.teamsEl.id = 'teams';
     root.querySelector('#topbar').prepend(this.teamsEl);
     this.items = [];
+    this.beltEl = document.createElement('div');
+    this.beltEl.id = 'belts';
+    root.appendChild(this.beltEl);
+    this.belts = [];
     this.v = new THREE.Vector3();
     this.announceTimer = null;
   }
@@ -28,6 +33,7 @@ export class Hud {
   build(fighters, winsNeeded, teams = null, keyFor = null) {
     this.cardsEl.innerHTML = '';
     this.teams = teams;
+    this.keyFor = keyFor;
     this.teamsEl.hidden = !teams;
     this.teamsEl.innerHTML = teams ? teams.map((t, i) => `<div class="team-score" style="--tc:${hex(t.color)}" data-t="${i}">
       <span class="team-name">${esc(t.name)}</span><span class="pips">${Array.from({ length: winsNeeded }, () => '<i></i>').join('')}</span></div>`).join('') : '';
@@ -76,6 +82,125 @@ export class Hud {
         mini: tag.querySelector('.mini div'), label: tag.querySelector('span'), name: tag.querySelector('span').textContent, downed: false, trail: f.hp, lastHp: -1, lastEn: -1, lastSt: -1, lastSh: -1, lastWins: -1, lastAlive: true,
       };
     });
+    this.buildBelts(fighters, keyFor);
+  }
+
+  // ---- ability bar ----
+  // A Diablo-style bar along the bottom for each player at this keyboard: a health orb and a mana orb
+  // either side of the weapon and armor slots and four slots for the guns and spell tomes they pick up.
+  buildBelts(fighters, keyFor) {
+    const mine = fighters.filter((f) => f.isYou || (f.isHuman && !f.netName));
+    this.beltEl.innerHTML = '';
+    this.beltEl.classList.toggle('compact', mine.length > 2);
+    this.root.classList.toggle('has-belt', mine.length > 0);
+    this.belts = mine.map((f) => {
+      const key = (a) => (keyFor ? keyLabel(keyFor(f, a)) : '');
+      const raw = (a) => (keyFor ? keyFor(f, a) : '');
+      const el = document.createElement('div');
+      el.className = 'belt';
+      el.style.setProperty('--pc', f.labelColor || hex(f.def.eyes));
+      const slots = Array.from({ length: BELT_SIZE }, (_, i) =>
+        `<div class="slot item" data-i="${i}"><div class="ico"></div>${raw('slot' + (i + 1)) ? `<b class="key">${esc(key('slot' + (i + 1)))}</b>` : ''}<span class="ct"></span></div>`).join('');
+      el.innerHTML = `
+        <div class="orb hp"><div class="liquid"></div><span></span></div>
+        <div class="belt-mid">
+          <div class="belt-row">
+            <div class="slot gear weapon" title="Weapon"><div class="ico"></div><i class="dur"><i></i></i></div>
+            <div class="slot gear armor" title="Armor"><div class="ico"></div><i class="dur"><i></i></i></div>
+            <span class="sep"></span>${slots}
+          </div>
+          <div class="belt-foot"><span class="belt-who">${esc(f.isYou ? 'You' : f.label)}</span><span class="belt-sel"></span>
+            <span class="belt-keys">${raw('use') ? `<kbd>${esc(key('use'))}</kbd> use` : ''}${raw('cycle') ? ` <kbd>${esc(key('cycle'))}</kbd> next` : ''}</span></div>
+        </div>
+        <div class="orb mp"><div class="liquid"></div><span></span></div>
+        <div class="belt-toast"></div>`;
+      this.beltEl.appendChild(el);
+      return {
+        f, el, toast: el.querySelector('.belt-toast'), toastTimer: null,
+        hp: el.querySelector('.orb.hp .liquid'), hpTxt: el.querySelector('.orb.hp span'),
+        mp: el.querySelector('.orb.mp .liquid'), mpTxt: el.querySelector('.orb.mp span'),
+        weapon: el.querySelector('.slot.weapon'), armor: el.querySelector('.slot.armor'),
+        slots: [...el.querySelectorAll('.slot.item')].map((s) => ({ el: s, ico: s.querySelector('.ico'), ct: s.querySelector('.ct') })),
+        sel: el.querySelector('.belt-sel'), last: {},
+      };
+    });
+  }
+
+  updateBelts() {
+    for (const b of this.belts) {
+      const f = b.f, L = b.last;
+      const hp = Math.max(0, Math.round(f.hp)), mp = Math.round(f.energy);
+      if (hp !== L.hp) { b.hp.style.transform = `translateY(${(1 - hp / f.maxHp) * 100}%)`; b.hpTxt.textContent = hp; L.hp = hp; b.el.classList.toggle('low', hp / f.maxHp < 0.25); }
+      if (mp !== L.mp) { b.mp.style.transform = `translateY(${(1 - mp / ENERGY_MAX) * 100}%)`; b.mpTxt.textContent = mp; L.mp = mp; }
+      const wKey = `${f.weapon}|${f.weaponHits}`;
+      if (wKey !== L.w) {
+        L.w = wKey;
+        const W = f.weapon && WEAPONS[f.weapon];
+        b.weapon.classList.toggle('on', !!W);
+        b.weapon.querySelector('.ico').innerHTML = W ? itemIcon(f.weapon, hex(W.color)) : itemIcon('sword', 'rgba(255,255,255,0.12)');
+        b.weapon.querySelector('.dur i').style.transform = `scaleX(${W ? f.weaponHits / W.hits : 0})`;
+        b.weapon.title = W ? `${W.label}: ${f.weaponHits} blows left` : 'Weapon: pick one up in the arena';
+      }
+      const aKey = Math.round(f.plate);
+      if (aKey !== L.a) {
+        L.a = aKey;
+        b.armor.classList.toggle('on', aKey > 0);
+        b.armor.querySelector('.ico').innerHTML = itemIcon('plate', aKey > 0 ? '#c8d2e0' : 'rgba(255,255,255,0.12)');
+        b.armor.querySelector('.dur i').style.transform = `scaleX(${Math.min(1, aKey / (f.maxHp * ARMOR_POINTS))})`;
+      }
+      const iKey = f.items.map((it) => `${it.id}:${it.charges}`).join(',') + '|' + f.sel;
+      if (iKey !== L.i) {
+        const prevIds = L.ids || [];
+        L.i = iKey;
+        L.ids = f.items.map((it) => it.id);
+        b.slots.forEach((s, i) => {
+          const it = f.items[i];
+          const sk = it && SKILLS[it.id];
+          s.el.classList.toggle('full', !!sk);
+          s.el.classList.toggle('sel', !!sk && i === f.sel);
+          s.el.classList.toggle('spell', !!sk?.spell);
+          if ((prevIds[i] || null) !== (it?.id || null)) {
+            s.ico.innerHTML = sk ? itemIcon(it.id, hex(sk.color)) : '';
+            if (sk) { s.el.classList.remove('fresh'); void s.el.offsetWidth; s.el.classList.add('fresh'); }
+          }
+          s.ct.textContent = sk ? it.charges : '';
+        });
+        const cur = f.items[f.sel];
+        b.sel.textContent = cur ? `${SKILLS[cur.id].label} · ${cur.charges} ${SKILLS[cur.id].gun ? 'shots' : 'casts'}` : 'Grab guns and spell tomes from the glowing pads';
+      }
+    }
+  }
+
+  // Big banner over the bar when a player picks up gear: what it is and how to use it.
+  gearToast(f, type) {
+    const keyFor = this.keyFor;
+    const b = this.belts.find((x) => x.f === f);
+    const pu = POWERUPS[type];
+    if (!b || !pu) return;
+    const sk = pu.item ? SKILLS[pu.item] : null;
+    const kind = pu.weapon ? 'Weapon equipped' : pu.armor ? 'Armor on' : sk?.spell ? 'New spell' : 'Gun acquired';
+    const idx = sk ? f.items.findIndex((it) => it.id === pu.item) : -1;
+    const slotKey = idx >= 0 && keyFor ? keyFor(f, 'slot' + (idx + 1)) : '';
+    const useKey = keyFor ? keyFor(f, 'use') : '';
+    const how = pu.weapon ? 'Your punches now strike with it'
+      : pu.armor ? 'Soaks part of every hit until it breaks'
+      : slotKey ? `Press <kbd>${esc(keyLabel(slotKey))}</kbd> to ${sk.spell ? 'cast' : 'fire'}`
+      : useKey ? `Selected · press <kbd>${esc(keyLabel(useKey))}</kbd> to ${sk.spell ? 'cast' : 'fire'}` : '';
+    b.toast.innerHTML = `<div class="t-ico">${itemIcon(pu.weapon || pu.item || 'plate', hex(pu.color))}</div>
+      <div class="t-txt"><small>${esc(kind)}</small><b style="color:${hex(pu.color)}">${esc(pu.label)}</b><span>${esc(pu.hint)}${how ? ` · ${how}` : ''}</span></div>`;
+    b.toast.classList.remove('on'); void b.toast.offsetWidth; b.toast.classList.add('on');
+    clearTimeout(b.toastTimer);
+    b.toastTimer = setTimeout(() => b.toast.classList.remove('on'), 3200);
+  }
+
+  // A short line on the bar for gear that breaks.
+  gearNote(f, text) {
+    const b = this.belts.find((x) => x.f === f);
+    if (!b) return;
+    b.toast.innerHTML = `<div class="t-txt"><b class="broke">${esc(text)}</b></div>`;
+    b.toast.classList.remove('on'); void b.toast.offsetWidth; b.toast.classList.add('on');
+    clearTimeout(b.toastTimer);
+    b.toastTimer = setTimeout(() => b.toast.classList.remove('on'), 1800);
   }
 
   setHints(lines) {
@@ -85,12 +210,12 @@ export class Hud {
 
   static controlHint(index, b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[a]))}</kbd>`;
-    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special`;
+    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special${b.use ? ` · ${k('use')} gun or spell` : ''}${b.cycle ? ` · ${k('cycle')} next slot` : ''}`;
   }
 
   static onlineHint(b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[0][a]))}</kbd>`;
-    return `<b>You</b> ${k('up')}${k('left')}${k('down')}${k('right')} or arrows move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special`;
+    return `<b>You</b> ${k('up')}${k('left')}${k('down')}${k('right')} or arrows move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special · ${k('use')} or ${k('slot1')}-${k('slot4')} gun or spell · ${k('cycle')} next slot`;
   }
 
   // "P1 Ember (Mage): = Meteor · - Flame Lance · 0 Ember Spray · I Hellfire Orb"
@@ -128,6 +253,7 @@ export class Hud {
   }
 
   update(dt, camera, width, height) {
+    this.updateBelts();
     if (this.teams) {
       const alive = new Set(this.items.filter((it) => it.f.alive).map((it) => it.f.team));
       this.teamPips.forEach((tp, i) => tp.el.classList.toggle('out', !alive.has(i)));

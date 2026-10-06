@@ -1,8 +1,8 @@
 // Fighter simulation: state machine, movement, attacks and taking hits.
 import * as THREE from 'three';
 import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST, GUARD_MAX, PLAYER_COLORS,
-  STAMINA, STAMINA_MAX, DODGE, COMBAT } from './config.js';
-import { buildFighterModel, computePose, applyPose, applyTeamOutfit } from './fighterModel.js';
+  STAMINA, STAMINA_MAX, DODGE, COMBAT, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
+import { buildFighterModel, computePose, applyPose, applyTeamOutfit, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 
 const FREE_STATES = new Set(['idle']);
@@ -114,6 +114,12 @@ export class Fighter {
     this.reviveProgress = 0;
     this.blockAt = -10;
     this.lastBackstab = -10;
+    // gear picked up this round: a melee weapon in hand, guns and spell tomes on the ability bar, worn armor
+    this.weapon = null;
+    this.weaponHits = 0;
+    this.items = [];          // [{ id, charges }], at most BELT_SIZE
+    this.sel = 0;             // selected bar slot
+    this.plate = 0;           // armor points left
     this.intent = { mx: 0, mz: 0, block: false };
     this.model.root.position.copy(pos);
     this.model.root.rotation.y = facing;
@@ -125,6 +131,66 @@ export class Fighter {
     this.model.body.visible = true;
     this.model.ring.visible = true;
     this.model.root.visible = true;
+    setGear(this.model, null, null);
+    setArmorVisible(this.model, false);
+  }
+
+  // ---- gear ----
+  equipWeapon(id) {
+    if (!WEAPONS[id]) return;
+    this.weapon = id;
+    this.weaponHits = WEAPONS[id].hits;
+  }
+
+  wearArmor() { this.plate = Math.max(this.plate, this.maxHp * ARMOR_POINTS); }
+
+  // A gun or spell tome goes on the ability bar: more charges for one already carried, else the next
+  // free slot, else it replaces the selected one. The new item becomes the selected slot.
+  addItem(id) {
+    const sk = SKILLS[id];
+    if (!sk?.item) return -1;
+    let i = this.items.findIndex((it) => it.id === id);
+    if (i >= 0) this.items[i].charges = Math.min(sk.charges * 2, this.items[i].charges + sk.charges);
+    else if (this.items.length < BELT_SIZE) { this.items.push({ id, charges: sk.charges }); i = this.items.length - 1; }
+    else { i = Math.min(this.sel, this.items.length - 1); this.items[i] = { id, charges: sk.charges }; }
+    this.sel = i;
+    return i;
+  }
+
+  // Fires the gun or casts the spell in bar slot `idx`.
+  startItem(idx, world) {
+    const item = this.items[idx];
+    if (!item) { world.events.emit('skillFail', { fighter: this, reason: 'empty' }); return false; }
+    const sk = SKILLS[item.id];
+    this.sel = idx;
+    this.uncloak();
+    item.charges--;
+    if (item.charges <= 0) {
+      this.items.splice(idx, 1);
+      this.sel = Math.max(0, Math.min(this.sel, this.items.length - 1));
+    }
+    this.skill = sk;
+    this.skillId = item.id;
+    this.skillIdx = -1;
+    this.sprinting = false;
+    this.setState('skill');
+    this.specialPhase = 0;
+    this.specialDone = false;
+    if (sk.type === 'bolt' || sk.type === 'beam') {
+      const it = this.intent;
+      const moving = Math.hypot(it.mx, it.mz) > 0.1;
+      const dir = moving ? Math.atan2(it.mx, it.mz) : this.facing;
+      const target = this.findTarget(world, 16, 1.2, dir) || this.findTarget(world, 16, Math.PI, dir);
+      if (target) this.faceToward(target); else if (moving) this.facing = dir;
+    }
+    world.events.emit('skillStart', { fighter: this, skill: item.id, slot: -1 });
+    return true;
+  }
+
+  cycleItem(world) {
+    if (this.items.length < 2) return;
+    this.sel = (this.sel + 1) % this.items.length;
+    world.events.emit('itemSelect', { fighter: this, slot: this.sel });
   }
 
   setState(state, duration = 0) {
@@ -159,12 +225,13 @@ export class Fighter {
   canAct() { return this.alive && FREE_STATES.has(this.state); }
 
   update(dt, world) {
+    this.world = world;
     if (!this.alive && this.state !== 'ko') return;
     this.animTime += dt;
 
     if (this.hitstop > 0) {
       this.hitstop -= dt;
-      this.syncVisual(0);
+      this.syncVisual(0, world);
       return;
     }
     this.stateTime += dt;
@@ -199,7 +266,7 @@ export class Fighter {
     }
 
     this.integrate(dt, world);
-    this.syncVisual(dt);
+    this.syncVisual(dt, world);
   }
 
   updateStatus(dt, world) {
@@ -291,7 +358,8 @@ export class Fighter {
     const intent = this.controller ? this.controller.getIntent(this, world) : null;
     if (!intent || world.locked) { this.intent = { mx: 0, mz: 0, block: false }; this.buffer = null; this.sprinting = false; return; }
     this.intent = intent;
-    for (const a of ['dash', 'special', 'skill1', 'skill2', 'skill3', 'punch', 'kick', 'jump']) {
+    if (intent.cycle) this.cycleItem(world);
+    for (const a of ['dash', 'special', 'skill1', 'skill2', 'skill3', 'use', 'slot1', 'slot2', 'slot3', 'slot4', 'punch', 'kick', 'jump']) {
       if (intent[a]) { this.buffer = { action: a, time: world.time }; break; }
     }
     if (this.buffer && world.time - this.buffer.time > 0.22) this.buffer = null;
@@ -314,6 +382,8 @@ export class Fighter {
         }
       } else if (action === 'skill1' || action === 'skill2' || action === 'skill3') {
         if (this.grounded) { this.consumeBuffer(); if (this.startSkill(+action.slice(5) - 1, world)) return; }
+      } else if (action === 'use' || action.startsWith('slot')) {
+        if (this.grounded) { this.consumeBuffer(); if (this.startItem(action === 'use' ? this.sel : +action.slice(4) - 1, world)) return; }
       } else if (action === 'punch' || action === 'kick') {
         if (this.grounded) { this.consumeBuffer(); this.startAttack(action === 'punch' ? 'jab1' : 'kick1', world); return; }
         if (!this.airAttackUsed && this.pos.y > 0.4) { this.consumeBuffer(); this.airAttackUsed = true; this.startAttack('airkick', world); return; }
@@ -351,7 +421,8 @@ export class Fighter {
     const dir = moving ? Math.atan2(it.mx, it.mz) : this.facing;
     const target = this.findTarget(world, 3.6, 1.9, dir) || this.findTarget(world, 2.2, Math.PI, dir);
     if (target) this.faceToward(target); else if (moving) this.facing = dir;
-    world.events.emit('swing', { fighter: this, move: name, heavy: !!move.heavy, kind: move.kind });
+    const armed = this.weapon && move.kind === 'punch';
+    world.events.emit('swing', { fighter: this, move: name, heavy: !!move.heavy || !!armed, kind: move.kind, weapon: armed ? this.weapon : null });
   }
 
   tickAttack(dt, world) {
@@ -401,21 +472,35 @@ export class Fighter {
   checkHits(world) {
     const m = this.move;
     const power = this.dmgMult();
+    // a weapon in hand turns punches into slashes, chops or crushing blows
+    const W = this.weapon && m.kind === 'punch' ? WEAPONS[this.weapon] : null;
+    const range = m.range * this.def.scale + (W ? W.range : 0);
     for (const o of world.fighters) {
       if (o === this || !o.alive || this.hitSet.has(o.id) || spared(this, o, world)) continue;
       const dx = o.pos.x - this.pos.x, dz = o.pos.z - this.pos.z;
       const d = Math.hypot(dx, dz);
-      if (d > m.range * this.def.scale + o.radius) continue;
+      if (d > range + o.radius) continue;
       if (Math.abs(o.pos.y - this.pos.y) > 1.3) continue;
       const da = Math.abs(wrapAngle(Math.atan2(dx, dz) - this.facing));
       if (da > m.arc / 2 && d > o.radius * 1.6) continue;
       this.hitSet.add(o.id);
       const nx = d > 1e-3 ? dx / d : Math.sin(this.facing), nz = d > 1e-3 ? dz / d : Math.cos(this.facing);
-      const res = o.receiveHit(this, {
+      const res = o.receiveHit(this, W ? {
+        damage: m.damage * power * W.damage, knock: m.knock * W.knock, hitstun: m.hitstun * 1.15,
+        knockdown: !!m.knockdown || (!!W.heavy && !!m.heavy), heavy: !!m.heavy || !!W.heavy, dx: nx, dz: nz,
+        kind: 'weapon', weapon: this.weapon, melee: true, move: this.moveName, color: W.color,
+        poison: W.bleed, poisonColor: W.bleed ? 0xff2a2a : undefined,
+      } : {
         damage: m.damage * power, knock: m.knock, hitstun: m.hitstun, knockdown: !!m.knockdown,
         heavy: !!m.heavy, dx: nx, dz: nz, kind: m.kind, move: this.moveName,
       }, world);
-      if (res !== 'ignored') this.hitstop = Math.max(this.hitstop, m.heavy ? 0.09 : 0.05);
+      if (res !== 'ignored') this.hitstop = Math.max(this.hitstop, m.heavy || W ? 0.09 : 0.05);
+      if (W && res !== 'ignored' && --this.weaponHits <= 0) {
+        world.effects.sparks(this.pos.x, 1.2, this.pos.z, W.color, 26, 6);
+        world.events.emit('weaponBreak', { fighter: this, weapon: this.weapon });
+        this.weapon = null;
+        break;
+      }
     }
   }
 
@@ -610,6 +695,18 @@ export class Fighter {
       world.effects.sparks(this.pos.x - h.dx * 0.5, 1.2, this.pos.z - h.dz * 0.5, this.model.shell.material.color.getHex(), 8, 4);
       if (this.shield <= 0) { this.shield = 0; this.shieldTime = 0; world.events.emit('shieldBreak', { fighter: this }); }
     }
+    if (this.plate > 0 && dmg > 0) {
+      // Iron Armor takes a share of every blow until it is battered apart
+      const soak = Math.min(this.plate, dmg * ARMOR_SOAK);
+      this.plate -= soak;
+      dmg -= soak;
+      world.effects.sparks(this.pos.x - h.dx * 0.4, 1.4, this.pos.z - h.dz * 0.4, 0xd8e0ea, 6, 4);
+      if (this.plate <= 0.5) {
+        this.plate = 0;
+        world.effects.sparks(this.pos.x, 1.4, this.pos.z, 0x9aa6b8, 30, 5);
+        world.events.emit('armorBreak', { fighter: this });
+      }
+    }
     this.applyDamage(dmg, src, world, false);
     if (src && src !== this) {
       src.energy = Math.min(ENERGY_MAX, src.energy + dmg * 1.1);
@@ -624,7 +721,7 @@ export class Fighter {
     this.hitstop = h.heavy ? 0.09 : 0.05;
     const px = this.pos.x - h.dx * 0.25, pz = this.pos.z - h.dz * 0.25;
     world.effects.impact(px, h.kind === 'kick' ? 1.1 : 1.35, pz, h.heavy ? 1.6 : 1, h.color);
-    world.events.emit('hit', { fighter: this, by: src, damage: dmg, heavy: !!h.heavy, kind: h.kind, move: h.move, ko: !this.alive });
+    world.events.emit('hit', { fighter: this, by: src, damage: dmg, heavy: !!h.heavy, kind: h.kind, move: h.move, weapon: h.weapon || null, ko: !this.alive });
     if (h.heavy) world.shake(h.knockdown ? 0.35 : 0.22);
 
     if (h.poison) { this.poison = Math.max(this.poison, h.poison); this.poisonBy = src; this.poisonColor = h.poisonColor || 0x9dff3a; }
@@ -772,7 +869,19 @@ export class Fighter {
     return (this.sprinting ? STAMINA.sprintSpeed : 1) * (this.haste > 0 ? 1.35 : 1) * (this.slow > 0 ? 0.6 : 1) * (this.exhausted ? STAMINA.exhaustedSpeed : 1);
   }
 
-  syncVisual(dt) {
+  // Yaw toward the nearest foe within a few metres, for the head to glance at (null if none).
+  lookTarget(world) {
+    if (!world) return null;
+    let best = null, bd = 9;
+    for (const o of world.fighters) {
+      if (o === this || !o.alive || allies(this, o)) continue;
+      const d = Math.hypot(o.pos.x - this.pos.x, o.pos.z - this.pos.z);
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best ? angleTo(this.pos.x, this.pos.z, best.pos.x, best.pos.z) : null;
+  }
+
+  syncVisual(dt, world = this.world) {
     const m = this.model;
     m.root.position.set(this.pos.x, this.pos.y, this.pos.z);
     m.root.rotation.y = this.facing;
@@ -787,7 +896,14 @@ export class Fighter {
     if (this.state !== 'frozen' && dt > 0) {
       const sharp = this.state === 'attack' || this.state === 'hitstun' || this.state === 'special' || this.state === 'skill' || this.state === 'dodge';
       applyPose(m, computePose(this), dt, sharp);
+      animateLife(m, this, dt, this.lookTarget(world));
     }
+    // gear on the body: the weapon (or a gun while firing) in the fist, a spare gun holstered, armor worn
+    const firing = this.state === 'skill' && this.skill?.gun;
+    const spare = this.items.find((it) => SKILLS[it.id]?.gun && (!firing || SKILLS[it.id].gun !== this.skill.gun));
+    setGear(m, firing ? this.skill.gun : this.weapon, spare ? SKILLS[spare.id].gun : null);
+    const armored = this.plate > 0;
+    if (m.armor.helm.visible !== armored) setArmorVisible(m, armored);
     // ring fades out when KO'd
     if (this.state === 'ko') {
       m.ring.material.opacity = Math.max(0, 0.75 - this.stateTime);

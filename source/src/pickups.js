@@ -1,8 +1,10 @@
 // Power-ups: a glowing gem floats over each pad on the arena floor. Walk through it to take it;
 // the pad then stays empty for a while before something new appears. The host (or local game)
 // owns the state; online clients only mirror which gem sits on which pad.
+// Weapons and guns float over their pad as the real thing; spell tomes and armor show as a gem.
 import * as THREE from 'three';
 import { POWERUPS, POWERUP_IDS } from './config.js';
+import { buildGear } from './items.js';
 
 const gemGeo = new THREE.OctahedronGeometry(0.32, 0);
 const padGeo = new THREE.RingGeometry(0.55, 0.75, 28).rotateX(-Math.PI / 2);
@@ -27,7 +29,7 @@ export class Pickups {
 
   // Lays out pads for the current battleground (rebuilt when the map changes).
   setPads(list) {
-    for (const p of this.pads) { this.group.remove(p.gem, p.ring); p.gem.material.dispose(); p.glow.material.dispose(); p.ring.material.dispose(); }
+    for (const p of this.pads) { this.group.remove(p.gem, p.ring, p.show); p.gem.material.dispose(); p.glow.material.dispose(); p.ring.material.dispose(); }
     this.pads = list.map(({ x, z }) => {
       const ring = new THREE.Mesh(padGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
       ring.position.set(x, 0.04, z);
@@ -36,8 +38,10 @@ export class Pickups {
       const glow = this.world.effects.makeGlow(0xffffff, 1.6);
       gem.add(glow);
       gem.visible = false;
-      this.group.add(ring, gem);
-      return { x, z, type: null, timer: 0, gem, glow, ring };
+      const show = new THREE.Group();
+      show.position.set(x, 1.0, z);
+      this.group.add(ring, gem, show);
+      return { x, z, type: null, timer: 0, gem, glow, ring, show, models: {} };
     });
   }
 
@@ -50,7 +54,18 @@ export class Pickups {
 
   setType(p, type) {
     p.type = type;
+    const model = type ? POWERUPS[type].weapon || (POWERUPS[type].item?.startsWith('gun_') ? POWERUPS[type].item.slice(4) : null) : null;
+    for (const [k, m] of Object.entries(p.models)) m.visible = k === model;
+    if (model && !p.models[model]) {
+      const m = buildGear(model);
+      // stand it upright, a little larger than in the hand, so it reads from the camera
+      if (POWERUPS[type].weapon) m.position.y = -0.45; else m.rotation.set(0, 0, 0);
+      m.scale.setScalar(POWERUPS[type].weapon ? 1.15 : 1.6);
+      p.show.add(m);
+      p.models[model] = m;
+    }
     p.gem.visible = !!type;
+    p.gem.scale.setScalar(model ? 0.45 : 1);
     if (!type) { p.ring.material.opacity = 0.12; return; }
     const c = POWERUPS[type].color;
     p.gem.material.color.setHex(c);
@@ -105,6 +120,8 @@ export class Pickups {
       if (!p.gem.visible) continue;
       p.gem.rotation.y = time * 2.2 + i;
       p.gem.position.y = 1.0 + Math.sin(time * 3 + i) * 0.15;
+      p.show.rotation.y = time * 1.6 + i;
+      p.show.position.y = 1.05 + Math.sin(time * 3 + i) * 0.15;
     }
   }
 
@@ -129,6 +146,12 @@ export function applyPowerup(f, type, world) {
     case 'mana': f.energy = 100; break;
     case 'cloak': f.vanish = Math.max(f.vanish, 5); world.effects.puff(f.pos.x, f.pos.z, POWERUPS.cloak.color); break;
     case 'vamp': f.lifesteal = Math.max(f.lifesteal, 10); break;
+    default: {
+      const pu = POWERUPS[type];
+      if (pu?.weapon) f.equipWeapon(pu.weapon);
+      else if (pu?.armor) f.wearArmor();
+      else if (pu?.item) f.addItem(pu.item);
+    }
   }
   f.updateBuffVisuals();
 }

@@ -44,8 +44,34 @@ export const POWERUPS = {
   mana:   { label: 'Mana', color: 0x4a7aff, share: 2, hint: 'Fills the blue bar' },
   cloak:  { label: 'Cloak', color: 0xb070ff, share: 1, hint: 'Invisible for 5 seconds: sneak behind a foe' },
   vamp:   { label: 'Vampire', color: 0xd01a4a, share: 1, hint: 'Your hits heal you for 10 seconds' },
+  // gear: `weapon` goes in the fighter's hand, `item` goes on the ability bar, `armor` is worn
+  sword:  { label: 'Longsword', color: 0xdfe8f2, share: 1.3, weapon: 'sword', hint: 'Punches become sword slashes' },
+  axe:    { label: 'Battle Axe', color: 0xe0a060, share: 1, weapon: 'axe', hint: 'Heavy chops that hit hard' },
+  hammer: { label: 'War Hammer', color: 0xb8c0cc, share: 1, weapon: 'hammer', hint: 'Crushing blows that floor foes' },
+  plate:  { label: 'Iron Armor', color: 0x9aa6b8, share: 1, armor: true, hint: 'Helm and breastplate soak hits' },
+  pistol: { label: 'Hand Cannon', color: 0xffc04a, share: 1.3, item: 'gun_pistol', hint: 'A pistol with 12 shots' },
+  shotgun: { label: 'Scattergun', color: 0xff8a3a, share: 1, item: 'gun_shotgun', hint: 'A shotgun with 6 shells' },
+  rifle:  { label: 'Rail Rifle', color: 0x6af0ff, share: 0.7, item: 'gun_rifle', hint: 'Four piercing rail shots' },
+  tome_fire: { label: 'Fireball', color: 0xff6a1c, share: 1.1, item: 'sp_fireball', spell: true, hint: 'Spell: three blazing fireballs' },
+  tome_chain: { label: 'Chain Lightning', color: 0xfff27a, share: 1, item: 'sp_chain', spell: true, hint: 'Spell: lightning through every foe in line' },
+  tome_meteor: { label: 'Meteor Storm', color: 0xff3a1a, share: 0.7, item: 'sp_meteor', spell: true, hint: 'Spell: a meteor on the nearest foe' },
+  tome_frost: { label: 'Frost Nova', color: 0x9fe8ff, share: 0.8, item: 'sp_frostnova', spell: true, hint: 'Spell: freezes everyone around you' },
+  tome_heal: { label: 'Healing Light', color: 0x7affa0, share: 1, item: 'sp_heal', spell: true, hint: 'Spell: restores 35% health' },
 };
 export const POWERUP_IDS = Object.keys(POWERUPS);
+
+// Melee weapons replace bare-handed punches while they last (`hits` landed blows, then they break).
+export const WEAPONS = {
+  sword:  { label: 'Longsword', color: 0xdfe8f2, damage: 1.45, range: 0.6, hits: 16, knock: 1.1, sound: 'blade' },
+  axe:    { label: 'Battle Axe', color: 0xe0a060, damage: 1.75, range: 0.45, hits: 12, knock: 1.3, sound: 'blade', bleed: 2 },
+  hammer: { label: 'War Hammer', color: 0xb8c0cc, damage: 1.6, range: 0.5, hits: 12, knock: 1.7, sound: 'crush', heavy: true },
+};
+export const WEAPON_IDS = Object.keys(WEAPONS);
+// Iron Armor soaks this share of incoming damage until it has taken `ARMOR_POINTS` x max health.
+export const ARMOR_SOAK = 0.4;
+export const ARMOR_POINTS = 0.5;
+// The ability bar holds this many guns and spells; picking up one you already carry adds its charges.
+export const BELT_SIZE = 4;
 
 export const GRAVITY = 26;
 export const ENERGY_MAX = 100;
@@ -157,6 +183,25 @@ export const SKILLS = {
                   color: 0xfff6a8, length: 12, width: 1.0, damage: 10, stun: 0.5, knock: 4, hint: 'A bolt of lightning that jumps through everyone in line' },
   balllightning: { label: 'Ball Lightning', type: 'bolt', cost: 26, cooldown: 10, startup: 0.3, recovery: 0.3, pose: 'fireball',
                   color: 0xfff27a, glow: 0xb0a0ff, speed: 10, life: 2.2, size: 1.4, damage: 15, stun: 1.0, knock: 8, knockdown: true, hint: 'A slow, huge orb of lightning that floors whoever it touches' },
+
+  // Guns and spell tomes picked up from the arena floor. They sit on the ability bar, cost no mana
+  // and are used up: `charges` is the ammo or casts a pickup gives. `gun` draws the weapon in hand.
+  gun_pistol:  { label: 'Hand Cannon', type: 'bolt', item: true, gun: 'pistol', charges: 12, startup: 0.08, recovery: 0.16, pose: 'aim',
+                 color: 0xffe08a, glow: 0xff9a2a, speed: 46, life: 0.5, size: 0.2, stretch: 4, damage: 7, knock: 3, hint: 'Quick shots' },
+  gun_shotgun: { label: 'Scattergun', type: 'bolt', item: true, gun: 'shotgun', charges: 6, startup: 0.14, recovery: 0.42, pose: 'aim2',
+                 color: 0xffc070, glow: 0xff6a1a, count: 6, spread: 0.09, speed: 40, life: 0.28, size: 0.17, stretch: 4, damage: 4.5, knock: 7, hint: 'Six pellets, brutal up close' },
+  gun_rifle:   { label: 'Rail Rifle', type: 'beam', item: true, gun: 'rifle', charges: 4, startup: 0.3, recovery: 0.36, pose: 'aim2',
+                 color: 0x6af0ff, length: 18, width: 0.55, damage: 15, knock: 8, knockdown: true, hint: 'Pierces every foe in line' },
+  sp_fireball:  { label: 'Fireball', type: 'bolt', item: true, spell: true, charges: 3, startup: 0.22, recovery: 0.3, pose: 'fireball',
+                  color: 0xff7a1c, glow: 0xff3a00, speed: 20, life: 1.1, size: 1.1, damage: 14, burn: 3, knock: 8, knockdown: true, hint: 'A blazing fireball' },
+  sp_chain:     { label: 'Chain Lightning', type: 'beam', item: true, spell: true, charges: 3, startup: 0.24, recovery: 0.3, pose: 'storm',
+                  color: 0xfff6a8, length: 14, width: 1.1, damage: 12, stun: 0.8, knock: 5, hint: 'Lightning through every foe in line' },
+  sp_meteor:    { label: 'Meteor Storm', type: 'smite', item: true, spell: true, charges: 2, startup: 0.32, recovery: 0.3, pose: 'storm',
+                  color: 0xff4a1a, range: 16, radius: 2.8, delay: 0.7, damage: 20, knock: 9, knockdown: true, burn: 3, fx: 'meteor', hint: 'A meteor on the nearest foe' },
+  sp_frostnova: { label: 'Frost Nova', type: 'nova', item: true, spell: true, charges: 2, startup: 0.2, recovery: 0.32, pose: 'ironwill',
+                  color: 0x9fe8ff, radius: 3.8, damage: 8, knock: 3, freeze: 1.6, hint: 'Freezes everyone around you' },
+  sp_heal:      { label: 'Healing Light', type: 'heal', item: true, spell: true, charges: 2, startup: 0.2, recovery: 0.25, pose: 'ironwill',
+                  color: 0x7affa0, healPct: 0.35, duration: 1.6, hint: 'Restores 35% health' },
 };
 export const SKILL_IDS = Object.keys(SKILLS);
 
@@ -170,46 +215,53 @@ export function cleanTeamName(s, i) {
 
 // Colours are linear-ish hex values for MeshStandardMaterial.
 export const ROSTER = [
-  { id: 'ember', name: 'Ember', title: 'The Pyre Monk', gi: 0xd8641c, trim: 0x2a120a, eyes: 0xffb347,
+  { id: 'ember', skin: 0xc68a5e, hair: 0x1a0d08, hairStyle: 'topknot', beard: false, name: 'Ember', title: 'The Pyre Monk', gi: 0xd8641c, trim: 0x2a120a, eyes: 0xffb347,
     special: 'fireball', speed: 1.0, power: 1.0, health: 100, scale: 1.0, accessory: 'topknot', skills: ['meteor', 'flamelance', 'emberspray'], role: 'Mage' },
-  { id: 'frost', name: 'Frost', title: 'Warden of the North', gi: 0x2f7fd0, trim: 0x0d1f33, eyes: 0x9fe8ff,
+  { id: 'frost', skin: 0xe8c4a8, hair: 0xd8e4f0, hairStyle: 'long', beard: true, name: 'Frost', title: 'Warden of the North', gi: 0x2f7fd0, trim: 0x0d1f33, eyes: 0x9fe8ff,
     special: 'frost', speed: 0.98, power: 0.95, health: 104, scale: 1.0, accessory: 'none', skills: ['shards', 'glacier', 'frostray'], role: 'Mage' },
-  { id: 'titan', name: 'Titan', title: 'The Mountain', gi: 0x8b6a3e, trim: 0x2b2116, eyes: 0xffdd77,
+  { id: 'titan', skin: 0x8a5a3c, hair: 0x1a120c, hairStyle: 'bald', beard: true, name: 'Titan', title: 'The Mountain', gi: 0x8b6a3e, trim: 0x2b2116, eyes: 0xffdd77,
     special: 'slam', speed: 0.84, power: 1.2, health: 125, scale: 1.16, accessory: 'pads', skills: ['mountainfist', 'tremor', 'avalanche'], role: 'Warrior' },
-  { id: 'viper', name: 'Viper', title: 'Fang of the Marsh', gi: 0x3f9b3a, trim: 0x10240f, eyes: 0xc6ff4a,
+  { id: 'viper', skin: 0xb88a5a, hair: 0x4f9a1c, hairStyle: 'mohawk', beard: false, name: 'Viper', title: 'Fang of the Marsh', gi: 0x3f9b3a, trim: 0x10240f, eyes: 0xc6ff4a,
     special: 'venom', speed: 1.12, power: 0.9, health: 92, scale: 0.96, accessory: 'none', skills: ['spit', 'fangvolley', 'piercingfang'], role: 'Ranged' },
-  { id: 'volt', name: 'Volt', title: 'Thunder Herald', gi: 0xe0c13a, trim: 0x2e2708, eyes: 0xfff6a8,
+  { id: 'volt', skin: 0xdcae86, hair: 0xf0e070, hairStyle: 'spiky', beard: false, name: 'Volt', title: 'Thunder Herald', gi: 0xe0c13a, trim: 0x2e2708, eyes: 0xfff6a8,
     special: 'storm', speed: 1.04, power: 0.98, health: 98, scale: 1.0, accessory: 'horns', skills: ['spark', 'lightningarc', 'balllightning'], role: 'Mage' },
-  { id: 'shade', name: 'Shade', title: 'The Unseen', gi: 0x6b3fa8, trim: 0x170c26, eyes: 0xe08bff,
+  { id: 'shade', skin: 0xa87a58, hair: 0x120a18, hairStyle: 'short', beard: false, mask: true, name: 'Shade', title: 'The Unseen', gi: 0x6b3fa8, trim: 0x170c26, eyes: 0xe08bff,
     special: 'shadow', speed: 1.1, power: 0.92, health: 94, scale: 0.98, accessory: 'hood', skills: ['kunai', 'voidbolt', 'phantomlance'], role: 'Ranged' },
-  { id: 'kane', name: 'Kane', title: 'Blood Hunter', gi: 0xa8202c, trim: 0x22070a, eyes: 0xff5a4a,
+  { id: 'kane', skin: 0x6a4028, hair: 0x0e0808, hairStyle: 'braids', beard: true, name: 'Kane', title: 'Blood Hunter', gi: 0xa8202c, trim: 0x22070a, eyes: 0xff5a4a,
     special: 'spear', speed: 1.0, power: 1.03, health: 100, scale: 1.02, accessory: 'none', skills: ['bloodrush', 'reaver', 'crimsonwhirl'], role: 'Warrior' },
-  { id: 'onyx', name: 'Onyx', title: 'Iron Revenant', gi: 0x3a3d44, trim: 0x0b0c0e, eyes: 0xd0e4ff,
+  { id: 'onyx', skin: 0x4a3428, hair: 0x0a0a0c, hairStyle: 'bald', beard: false, name: 'Onyx', title: 'Iron Revenant', gi: 0x3a3d44, trim: 0x0b0c0e, eyes: 0xd0e4ff,
     special: 'ironwill', speed: 0.92, power: 1.1, health: 115, scale: 1.08, accessory: 'horns', skills: ['shatter', 'guardcrush', 'cyclone'], role: 'Warrior' },
 ];
 
-export const ACTIONS = ['up', 'down', 'left', 'right', 'punch', 'kick', 'block', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3'];
+export const ACTIONS = ['up', 'down', 'left', 'right', 'punch', 'kick', 'block', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3',
+  'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4'];
 export const ACTION_LABELS = {
   up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right',
   punch: 'Punch', kick: 'Kick', block: 'Block (hold)', special: 'Special', jump: 'Jump',
   dash: 'Dodge (tap) / sprint (hold)', skill1: 'Skill 1', skill2: 'Skill 2', skill3: 'Skill 3',
+  use: 'Use gun / spell', cycle: 'Next bar slot', slot1: 'Bar slot 1', slot2: 'Bar slot 2', slot3: 'Bar slot 3', slot4: 'Bar slot 4',
 };
 
 // KeyboardEvent.code values, so bindings work on any keyboard layout.
 // P1's left hand moves (WASD, Shift), the right hand fights (J K I H) and casts (= - 0).
+// The ability bar (guns and spell tomes picked up in the arena): P1 fires with E, Q picks the next slot, 1-4 fire a slot directly.
 export const DEFAULT_BINDINGS = [
   { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
     punch: 'KeyJ', kick: 'KeyK', block: 'KeyH', special: 'KeyI', jump: 'Space',
-    dash: 'ShiftLeft', skill1: 'Equal', skill2: 'Minus', skill3: 'Digit0' },
+    dash: 'ShiftLeft', skill1: 'Equal', skill2: 'Minus', skill3: 'Digit0',
+    use: 'KeyE', cycle: 'KeyQ', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4' },
   { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
     punch: 'Period', kick: 'Slash', block: 'Semicolon', special: 'Quote', jump: 'Enter',
-    dash: 'ShiftRight', skill1: 'BracketRight', skill2: 'BracketLeft', skill3: 'Backslash' },
+    dash: 'ShiftRight', skill1: 'BracketRight', skill2: 'BracketLeft', skill3: 'Backslash',
+    use: 'Comma', cycle: 'Backspace', slot1: '', slot2: '', slot3: '', slot4: '' },
   { up: 'Numpad8', down: 'Numpad5', left: 'Numpad4', right: 'Numpad6',
     punch: 'Numpad1', kick: 'Numpad2', block: 'Numpad3', special: 'Numpad7', jump: 'Numpad0',
-    dash: 'NumpadDecimal', skill1: 'Numpad9', skill2: 'NumpadAdd', skill3: 'NumpadSubtract' },
+    dash: 'NumpadDecimal', skill1: 'Numpad9', skill2: 'NumpadAdd', skill3: 'NumpadSubtract',
+    use: 'NumpadEnter', cycle: 'NumpadMultiply', slot1: '', slot2: '', slot3: '', slot4: '' },
   { up: 'KeyY', down: 'KeyN', left: 'KeyB', right: 'KeyM',
     punch: 'KeyU', kick: 'KeyO', block: 'KeyL', special: 'Digit7', jump: 'Digit8',
-    dash: 'KeyV', skill1: 'Digit6', skill2: 'Digit9', skill3: 'Digit5' },
+    dash: 'KeyV', skill1: 'Digit6', skill2: 'Digit9', skill3: 'Digit5',
+    use: 'KeyG', cycle: 'KeyT', slot1: '', slot2: '', slot3: '', slot4: '' },
 ];
 
 export const PLAYER_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d'];
@@ -228,6 +280,8 @@ export function keyLabel(code) {
   if (code === 'NumpadDecimal') return 'Num .';
   if (code === 'NumpadAdd') return 'Num +';
   if (code === 'NumpadSubtract') return 'Num -';
+  if (code === 'NumpadMultiply') return 'Num *';
+  if (code === 'NumpadEnter') return 'Num ↵';
   if (code.startsWith('Numpad')) return 'Num ' + code.slice(6);
   const map = {
     ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'Space', Enter: 'Enter',

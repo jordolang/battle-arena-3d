@@ -70,6 +70,7 @@ export class HumanController {
     for (const a of NET_TAPS) this.seen[a] = keyboard.pressCount(binding[a]);
   }
   edge(action) {
+    if (!this.binding[action]) return false;
     const n = this.kb.pressCount(this.binding[action]);
     const hit = n > this.seen[action];
     this.seen[action] = n;
@@ -100,6 +101,12 @@ export class HumanController {
       skill1: this.edge('skill1'),
       skill2: this.edge('skill2'),
       skill3: this.edge('skill3'),
+      use: this.edge('use'),
+      cycle: this.edge('cycle'),
+      slot1: this.edge('slot1'),
+      slot2: this.edge('slot2'),
+      slot3: this.edge('slot3'),
+      slot4: this.edge('slot4'),
     };
   }
 }
@@ -126,7 +133,7 @@ export class OnlineKeyboardController {
 
 // Host side of a remote player: replays the latest input that arrived over the network.
 // Taps travel as running totals, so a lost or reordered packet never drops a punch.
-export const NET_TAPS = ['punch', 'kick', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3'];
+export const NET_TAPS = ['punch', 'kick', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3', 'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4'];
 export class NetController {
   constructor(playerIndex) {
     this.isHuman = true;

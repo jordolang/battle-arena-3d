@@ -43,6 +43,25 @@
       <div class="eyebrow">Versus CPU · online brawls · team tournaments</div>
       <h1 class="logo"><img src="assets/jose-madrid-battle-arena-logo.webp" alt="José Madrid Salsa Battle Arena" width="640" height="640"></h1>
       <p class="tagline">Eight warriors, one blood-moon coliseum. Punch, kick, dodge, cast your spells and unleash your special until only one fighter, or one team, is left standing.</p>
+      <div class="account" id="account-box">
+        <div class="fr-head">Sign in to fight</div>
+        <div class="acct-out">
+          <p>Every fighter signs in with a José Madrid Salsa account. Sign in, or make a free account, to fight, climb the leaderboards and battle for your fundraising group.</p>
+          <div class="acct-actions">
+            <button class="nav big primary" data-act="acct-signin">Sign in to play</button>
+            <button class="nav" data-act="acct-guest" hidden>Play as a guest <small>(local copy only)</small></button>
+          </div>
+        </div>
+        <div class="acct-in" hidden>
+          <div class="acct-who"><span class="acct-handle"></span><span class="acct-team"></span></div>
+          <div class="acct-stats"></div>
+          <div class="acct-actions">
+            <button class="nav" data-act="to-profile">My profile</button>
+            <button class="nav" data-act="to-boards">Leaderboards</button>
+          </div>
+        </div>
+        <p class="acct-msg" role="status"></p>
+      </div>
       <div class="fundraiser">
         <div class="fr-head">Fundraiser members only</div>
         <p>To fight online or in tournaments you must be enrolled in a José Madrid Salsa fundraising group. Enter the fundraiser code your organizer gave you; it works on any device. In tournaments your group is your team. Fight versus the CPU is open to everyone.</p>
@@ -59,6 +78,7 @@
         <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
+        <button class="nav big" data-act="to-boards">Leaderboards <small>players and groups</small></button>
         <button class="nav big" data-act="to-training">Training <small>tutorial and practice room</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
       </div>
@@ -300,6 +320,76 @@
     </div>
   </section>
 
+  <section class="screen" id="screen-profile" data-back="to-title" hidden>
+    <div class="plate wide">
+      <div class="eyebrow">Your fighter</div>
+      <h2 class="prof-name">Profile</h2>
+      <p class="prof-sub sub"></p>
+      <div class="prof-grid">
+        <div>
+          <div class="col-h">Fighter name</div>
+          <label class="field" for="prof-handle"><span class="lbl">Name on the boards</span><input id="prof-handle" class="nav" data-act="prof-save-name" maxlength="20" autocomplete="off" spellcheck="false"></label>
+          <button class="nav" data-act="prof-save-name">Save name</button>
+          <div class="col-h">Fundraising group</div>
+          <div class="prof-team"></div>
+          <p class="prof-msg" role="status"></p>
+        </div>
+        <div>
+          <div class="col-h">Record</div>
+          <div class="stat-grid prof-stats"></div>
+        </div>
+      </div>
+      <div class="col-h">Recent matches</div>
+      <div class="table-wrap">
+        <table class="results-table prof-matches">
+          <thead><tr><th>When</th><th>Mode</th><th>Fighter</th><th>Result</th><th>Rounds</th><th>KOs</th><th>Damage</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="nav big" data-act="to-boards">Leaderboards</button>
+        <button class="nav big" data-act="acct-signout">Sign out</button>
+        <button class="nav big" data-act="to-title">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-boards" data-back="boards-back" hidden>
+    <div class="plate wide">
+      <div class="eyebrow">José Madrid Salsa Battle Arena</div>
+      <h2>Leaderboards</h2>
+      <div class="board-opts"></div>
+      <p class="board-note sub"></p>
+      <div class="table-wrap board-wrap">
+        <table class="results-table board-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="nav big" data-act="boards-refresh">Refresh</button>
+        <button class="nav big" data-act="boards-back">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-player" data-back="player-back" hidden>
+    <div class="plate">
+      <div class="eyebrow">Fighter</div>
+      <h2 class="pl-name"></h2>
+      <p class="pl-sub sub"></p>
+      <div class="stat-grid pl-stats"></div>
+      <div class="col-h">Recent matches</div>
+      <div class="table-wrap">
+        <table class="results-table pl-matches">
+          <thead><tr><th>When</th><th>Mode</th><th>Fighter</th><th>Result</th><th>KOs</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions"><button class="nav big" data-act="player-back">Back to the boards</button></div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-results" data-back="quit" hidden>
     <div class="plate">
       <div class="eyebrow">Champion of the arena</div>
@@ -311,6 +401,7 @@
           <tbody></tbody>
         </table>
       </div>
+      <p class="acct-result" role="status"></p>
       <div class="actions">
         <button class="nav big primary" data-act="rematch">Rematch</button>
         <button class="nav big" data-act="to-setup">Change fighters</button>

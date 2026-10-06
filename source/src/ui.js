@@ -38,6 +38,8 @@ export function loadSetup() {
 export function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 
 const SUDDEN = [0, 45, 60, 75, 90, 120];
+// everything that starts or joins a fight needs a signed-in account (main.js sets menus.account)
+const LOGIN_GATED = new Set(['to-setup', 'to-online', 'to-tourney', 'to-training', 'start', 'rematch', 'net-host', 'net-join', 'net-queue', 't-join-fight']);
 const DIFFS = Object.keys(DIFFICULTY);
 const CONTROLS = [0, 1, 2, 3, 'cpu'];
 const QUALITY = ['auto', 'high', 'low'];
@@ -116,7 +118,11 @@ export class Menus {
     if (name === 'title' && this.fundraiser && Date.now() - (this.teamAt || 0) > 60000) { this.teamAt = Date.now(); this.refreshTeam(); }
     this.cb.onShow?.(name);
     // on the title, start on Fight once a fundraising group is filled in, otherwise on the group field
-    const first = name === 'title' && this.group ? this.screens.title.querySelector('.menu-list .nav') : this.screens[name].querySelector('.nav');
+    // (signed-out players start on Sign in)
+    const t = this.screens.title;
+    const first = name !== 'title' ? this.screens[name].querySelector('.nav')
+      : this.account && !this.account.ready ? t.querySelector('[data-act=acct-signin]')
+        : this.group ? t.querySelector('.menu-list .nav') : this.groupEl;
     first?.focus({ preventScroll: true });
   }
 
@@ -253,7 +259,22 @@ export class Menus {
     this.groupEl.focus({ preventScroll: true });
   }
 
+  // true when the player is signed in; otherwise sends them to the sign-in box on the title
+  requireAccount() {
+    if (!this.account || this.account.ready) return true;
+    if (this.active !== 'title') this.show('title');
+    const box = document.getElementById('account-box');
+    box.querySelector('.acct-msg').textContent = this.account.status === 'checking'
+      ? 'Still checking your sign-in. Try again in a moment.'
+      : 'Sign in with your José Madrid Salsa account first, then press the button again.';
+    box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    box.querySelector('[data-act=acct-signin]')?.focus({ preventScroll: true });
+    return false;
+  }
+
   runAct(act, el) {
+    if (LOGIN_GATED.has(act) && !this.requireAccount()) return;
     const gated = act === 'net-host' || act === 'net-join' || act === 'net-queue' || act === 't-join-fight' ||
       (act === 'to-online' && this.active === 'title');
     if (gated && !this.requireGroup()) return;

@@ -18,6 +18,28 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
 - Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`,
   then copy `dist/battle-arena.html` to the repo root as `index.html`.
 
+## José Madrid Salsa accounts, profiles and leaderboards
+- **Everyone signs in.** The title screen asks players to sign in with their José Madrid Salsa account before they can
+  fight in any mode. **Sign in to play** goes to `https://www.josemadrid.net/battle-arena/connect`, where they sign in
+  (or make a free account) and press **Play as …**; the website sends them straight back to the game, invite and
+  tournament links included. The game keeps a sign-in token in the browser for 90 days; **Sign out** on the profile
+  screen ends it.
+- **Profile** (title screen, **My profile**): the fighter name shown on the boards and online (players can rename
+  themselves), their fundraising group, wins, losses, win rate, knockouts, rounds won, damage, win streaks, all-time
+  rank, favourite fighter and recent matches. A player whose account already belongs to a group (a claimed
+  fundraiser character, or the fundraiser they run) is in that group automatically; anyone else picks a group from the
+  fundraisers running now, and can switch once a week.
+- **Leaderboards** (title screen): fighters or fundraising groups, this week, this month or all time, over every match,
+  versus players only, or one mode. Ranked by wins, then knockouts. Choose a fighter to see their profile.
+- **What gets recorded**: every match a signed-in player fights in (versus CPU, online, tournament) is opened on the
+  website when its first round starts and closed with that player's own result when it ends. The website refuses
+  results a match cannot produce (too fast, too many knockouts or too much damage). Spectating records nothing.
+- **Offline**: if the website cannot be reached a signed-in player keeps playing, but nothing is recorded.
+- **Testing**: `?account-api=URL` points the game at another copy of the website. On a local copy (localhost or a
+  file) **Play as a guest** skips sign-in, and `?autotest` plays as a guest. The website only hands sign-in tokens to
+  the published game (`https://battle-arena-3d-mauve.vercel.app`); other addresses are added on the website with
+  `ARENA_GAME_ORIGINS`.
+
 ## José Madrid Salsa fundraiser
 - The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
   a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).

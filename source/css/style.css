@@ -528,6 +528,59 @@ button { font: inherit; color: inherit; }
 #belts.compact .belt-toast b { font-size: 18px; }
 @media (max-width: 720px) { .belt { --orb: 60px; --slot: 38px; } .belt-keys { display: none; } }
 
+/* ---------- accounts: sign-in box, profile, leaderboards ---------- */
+.account {
+  border-left: 3px solid var(--ember); background: rgba(0, 0, 0, 0.42); padding: 10px 14px 12px;
+  display: flex; flex-direction: column; gap: 8px; max-width: 440px;
+}
+.account p { margin: 0; color: var(--bone); font-size: 16px; line-height: 1.35; }
+.account .fr-head { color: var(--ember); }
+.account.checking .acct-out { opacity: 0.55; }
+.account.shake { animation: fr-shake 0.45s ease; border-color: #ff6a4a; }
+.acct-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin-top: 4px; }
+.acct-actions .big { font-size: 22px; }
+.acct-actions .primary { color: var(--gold); }
+.acct-actions small { color: var(--ash); font-size: 0.8em; }
+.acct-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.acct-handle { font-family: var(--display); font-size: 30px; line-height: 1; }
+.acct-team { color: var(--gold); font-weight: 600; letter-spacing: 0.04em; }
+.acct-stats { color: var(--ash); font-size: 16px; font-variant-numeric: tabular-nums; }
+.account .acct-msg { color: #ffb08a; font-weight: 600; }
+.account .acct-msg:empty { display: none; }
+.acct-result { margin: 10px 0 0; color: var(--gold); font-size: 18px; font-weight: 600; min-height: 1.2em; }
+
+.prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 18px 32px; margin-bottom: 18px; }
+.prof-grid .col-h { margin-top: 14px; }
+.prof-grid .col-h:first-child { margin-top: 0; }
+.prof-msg { color: var(--gold); margin: 8px 0 0; min-height: 1.2em; }
+.team-fixed { color: var(--ash); margin: 6px 0 0; font-size: 16px; line-height: 1.35; }
+.team-fixed b { color: var(--tc, var(--bone)); font-size: 19px; }
+.team-school { color: var(--ash); margin: 2px 0 6px 6px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.stat { background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.06); padding: 8px 10px; display: flex; flex-direction: column; }
+.stat b { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--bone); line-height: 1.1; }
+.stat span { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ash); }
+.results-table td.won { color: var(--gold); font-weight: 700; }
+.results-table td.lost { color: var(--ash); }
+.results-table td.empty { color: var(--ash); text-transform: none; letter-spacing: 0; font-weight: 400; }
+.results-table td small { color: var(--ash); text-transform: none; letter-spacing: 0; font-weight: 400; }
+.results-table tr.me td { background: rgba(255, 200, 97, 0.1); color: var(--gold); }
+.results-table tr.nav { cursor: pointer; }
+.results-table tr.nav:focus { outline: none; }
+.results-table tr.nav:focus td, .results-table tr.nav:hover td { background: rgba(255, 122, 42, 0.16); }
+.board-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 18px; margin: 8px 0 6px; }
+.board-note { margin: 4px 0 10px !important; }
+.board-wrap { max-height: 52vh; overflow-y: auto; }
+@media (max-width: 720px) { .prof-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-height: 820px) { .title-wrap .account p, .title-wrap .fundraiser p { font-size: 14px; } }
+.acct-actions .nav:not(.big), .prof-grid button.nav:not(.opt) {
+  font-family: var(--ui); font-weight: 600; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 4px; margin-top: 6px;
+  color: var(--bone); border: 1px solid rgba(239, 228, 210, 0.28);
+}
+.acct-actions .nav:not(.big):focus, .acct-actions .nav:not(.big):hover,
+.prof-grid button.nav:not(.opt):focus, .prof-grid button.nav:not(.opt):hover { border-color: var(--ember); color: var(--gold); background: rgba(255, 122, 42, 0.1); }
+.prof-grid button.nav:disabled { opacity: 0.4; cursor: default; }
 /* ---- Touch controls (phones and tablets) ---- */
 #touch { --ts: 1; position: absolute; inset: 0; z-index: 4; pointer-events: none; touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 #touch[hidden] { display: none; }

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST, GUARD_MAX, PLAYER_COLORS,
   STAMINA, STAMINA_MAX, DODGE, COMBAT, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
-import { buildFighterModel, computePose, applyPose, applyTeamOutfit, setGear, setArmorVisible, animateLife } from './fighterModel.js';
+import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 
 const FREE_STATES = new Set(['idle']);
@@ -50,6 +50,13 @@ export class Fighter {
     this.teamName = name;
     this.teamColor = color;
     applyTeamOutfit(this.model, color);
+  }
+
+  // Cosmetic reward for a fundraising group that reached its goal (fundraiser.js REWARDS): 0 none, 1 silver, 2 gold.
+  setReward(tier) {
+    if (this.reward || !tier) return;
+    this.reward = tier;
+    applyReward(this.model, tier);
   }
 
   get isHuman() { return !!this.controller?.isHuman; }

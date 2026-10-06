@@ -2,7 +2,9 @@
 import { shareOnFacebook, shareAnywhere } from './share.js';
 import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BINDINGS, SPECIALS, SKILLS, keyLabel,
   TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
-import { saveBindings } from './input.js';
+import { saveBindings, devices } from './input.js';
+import { padLabel, PAD_RESERVED } from './padmap.js';
+import { lookupGroup, donateUrl, REWARDS } from './fundraiser.js';
 
 const SETUP_KEY = 'battle-arena.setup.v1';
 const GROUP_KEY = 'battle-arena.fundraiser-group.v1';
@@ -16,6 +18,7 @@ export function moveSummary(def) {
 export function defaultSetup() {
   return {
     count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, quality: 'auto', music: 70, sfx: 90,
+    players: 1, touch: 'auto', touchSize: 1,
     teams: { count: 0, names: [...TEAM_DEFAULT_NAMES] },
     slots: Array.from({ length: 8 }, (_, i) => ({ control: i === 0 ? 0 : 'cpu', fighter: i % ROSTER.length, team: i % 4 })),
   };
@@ -32,21 +35,24 @@ export function loadSetup() {
     return { ...d, ...s, teams, slots: d.slots.map((slot, i) => ({ ...slot, ...(s.slots?.[i] || {}) })) };
   } catch { return d; }
 }
-function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
+export function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 
 const SUDDEN = [0, 45, 60, 75, 90, 120];
 // everything that starts or joins a fight needs a signed-in account (main.js sets menus.account)
-const LOGIN_GATED = new Set(['to-setup', 'to-online', 'to-tourney', 'start', 'rematch', 'net-host', 'net-join', 'net-queue', 't-join-fight']);
+const LOGIN_GATED = new Set(['to-setup', 'to-online', 'to-tourney', 'to-training', 'start', 'rematch', 'net-host', 'net-join', 'net-queue', 't-join-fight']);
 const DIFFS = Object.keys(DIFFICULTY);
 const CONTROLS = [0, 1, 2, 3, 'cpu'];
 const QUALITY = ['auto', 'high', 'low'];
+const TOUCH = ['auto', 'on', 'off'];
+const TOUCH_SIZES = [0.85, 1, 1.18];
 
 export class Menus {
-  constructor({ keyboard, bindings, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow }) {
+  constructor({ keyboard, bindings, pads, onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow }) {
     this.kb = keyboard;
+    this.pads = pads;
     this.bindings = bindings;
     this.setup = loadSetup();
-    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onAct, onOpt, onShow };
+    this.cb = { onStart, onResume, onRestart, onQuit, onQualityChange, onVolumeChange, onTouchChange, onAct, onOpt, onShow };
     this.active = null;
     this.back = {};
     this.rebinding = null;
@@ -70,8 +76,9 @@ export class Menus {
       saveSetup(this.setup);
       this.updateTeamLabels();
     });
-    // players must belong to a fundraising group: the name or code is asked for on the title screen
-    // and kept in this browser; nothing checks it against the fundraiser system yet
+    // players must belong to a fundraising group: its code is asked for on the title screen and kept in
+    // this browser. Online battles check it with the José Madrid Salsa site (see OnlineMenus.checkFundraiser);
+    // tournaments check it on the admin's side
     this.groupEl = document.getElementById('fr-group');
     this.groupErr = this.screens.title.querySelector('.fr-error');
     try { this.groupEl.value = localStorage.getItem(GROUP_KEY) || ''; } catch { /* ignore */ }
@@ -79,13 +86,22 @@ export class Menus {
       this.groupErr.textContent = '';
       this.groupEl.classList.remove('bad');
       try { localStorage.setItem(GROUP_KEY, this.groupEl.value.trim()); } catch { /* ignore */ }
+      clearTimeout(this.teamTimer);
+      this.teamTimer = setTimeout(() => this.refreshTeam(), 500);
     });
+    // the group's fundraiser on the José Madrid Salsa site: goal progress, the donate link and its reward
+    this.teamEl = this.screens.title.querySelector('.fr-team');
+    this.fundraiser = null;
+    this.refreshTeam();
     keyboard.onKey((e) => this.onKey(e));
     document.addEventListener('click', (e) => {
       if (e.detail === 0) return; // keyboard-generated click; onKey already handled it
       const t = e.target.closest('[data-act],[data-opt]');
       if (t && t.tagName === 'INPUT') return; // clicking a text field only focuses it
-      if (t && this.active && this.screens[this.active].contains(t)) this.activate(t);
+      if (!t || !this.active || !this.screens[this.active].contains(t)) return;
+      // on a touch screen the ‹ arrow of an option steps back, the › arrow and the rest step forward
+      if (t.dataset.opt && e.target.closest('.val i') && e.target.closest('.val i') === t.querySelector('.val i')) { this.change(t, -1); return; }
+      this.activate(t);
     });
     document.addEventListener('mousemove', (e) => {
       const t = e.target.closest?.('.nav');
@@ -99,6 +115,7 @@ export class Menus {
     if (!name) return;
     if (name === 'setup') this.renderSetup();
     if (name === 'controls') this.renderControls();
+    if (name === 'title' && this.fundraiser && Date.now() - (this.teamAt || 0) > 60000) { this.teamAt = Date.now(); this.refreshTeam(); }
     this.cb.onShow?.(name);
     // on the title, start on Fight once a fundraising group is filled in, otherwise on the group field
     // (signed-out players start on Sign in)
@@ -118,6 +135,11 @@ export class Menus {
 
   onKey(e) {
     if (this.rebinding) return this.captureRebind(e);
+    if (this.padRebinding) {
+      // waiting for a controller button: Esc cancels, other keys are ignored
+      if (e.code === 'Escape' && !e.synthetic) { this.pads.capture = null; this.endPadRebind(null); }
+      return true;
+    }
     if (!this.active) return false;
     const items = this.navItems();
     const cur = document.activeElement && items.includes(document.activeElement) ? document.activeElement : null;
@@ -162,19 +184,79 @@ export class Menus {
   }
 
   get group() { return this.groupEl.value.trim(); }
+  // the cosmetic reward the player's group has earned (0 none, 1 Silver Laurel, 2 Golden Crown)
+  get rewardTier() { return this.fundraiser?.tier || 0; }
+
+  // Looks the typed group up on the fundraising site and redraws the team card under the group field.
+  async refreshTeam() {
+    const typed = this.group;
+    const ask = (this.teamAsk = (this.teamAsk || 0) + 1);
+    const found = typed ? await lookupGroup(typed) : { team: null, tier: 0 };
+    if (ask !== this.teamAsk) return; // the player kept typing
+    this.fundraiser = found;
+    this.renderTeam(typed, found);
+  }
+
+  renderTeam(typed, found) {
+    const el = this.teamEl;
+    const team = found?.team || null;
+    const tier = found?.tier || 0;
+    const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+    el.querySelector('.fr-team-name').textContent = team ? team.name : '';
+    el.querySelector('.fr-team-amt').textContent = team?.goal ? `${money(team.raised)} of ${money(team.goal)}` : '';
+    const bar = el.querySelector('.fr-bar');
+    bar.hidden = !team?.goal;
+    if (team?.goal) bar.querySelector('i').style.width = `${Math.min(100, (team.raised / team.goal) * 100)}%`;
+    el.classList.toggle('goal', tier === 2);
+    const reward = el.querySelector('.fr-reward');
+    if (team) {
+      const next = REWARDS[tier + 1];
+      reward.innerHTML = [
+        tier ? `Unlocked: <b>${REWARDS[tier].label}</b>, ${esc(REWARDS[tier].hint)}.` : '',
+        next && team.goal ? `${tier ? 'Next' : 'Reward'}: <b>${next.label}</b> at ${money(team.goal * next.at)} raised.` : '',
+        tier === 2 ? 'Your group reached its goal!' : '',
+      ].filter(Boolean).join(' ');
+    } else if (typed && found) {
+      reward.textContent = 'We could not find that group on the José Madrid Salsa fundraising site this month, so goal rewards are off. You can still find it and donate there.';
+    } else if (typed) {
+      reward.textContent = 'The fundraising site could not be reached just now, so your group\'s goal is not shown.';
+    } else {
+      reward.textContent = 'Fundraising groups that reach half their goal unlock a Silver Laurel for their fighters, and a Golden Crown at the full goal.';
+    }
+    const label = team ? `Donate to ${team.name}` : typed && found ? 'Find your group' : 'Support a fundraiser';
+    for (const b of document.querySelectorAll('.fr-donate')) {
+      b.textContent = b.closest('.share-row') && !team ? 'Support a fundraiser' : label;
+      b.title = team ? `Opens ${team.name}'s page on the José Madrid Salsa fundraising site` : 'Opens the José Madrid Salsa fundraising site';
+    }
+  }
+
+  // Donations happen on the fundraising site's own team page, in a new tab so the game keeps running.
+  donate() {
+    const url = donateUrl(this.fundraiser?.team);
+    const w = window.open(url, '_blank');
+    if (w) { w.opener = null; return; }
+    // a blocked pop-up: show the address instead of leaving the game
+    const msg = this.screens[this.active]?.querySelector('.share-msg') || this.teamEl.querySelector('.fr-reward');
+    if (msg) msg.innerHTML = `Open <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> to donate.`;
+  }
 
   // true when a fundraising group has been entered; otherwise sends the player back to the field on the title
   requireGroup() {
     if (this.group) return true;
+    this.flagGroup('Type your fundraiser code in the box above first, then press the button again.');
+    return false;
+  }
+
+  // sends the player back to the fundraiser field on the title with `why` under it
+  flagGroup(why) {
     if (this.active !== 'title') this.show('title');
-    this.groupErr.textContent = 'Type your fundraising group in the box above first, then press the button again.';
+    this.groupErr.textContent = why;
     this.groupEl.classList.add('bad');
     // replay the shake so a second press is noticed too
     const box = this.groupEl.closest('.fundraiser');
     box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
     box.scrollIntoView({ block: 'center', behavior: 'smooth' });
     this.groupEl.focus({ preventScroll: true });
-    return false;
   }
 
   // true when the player is signed in; otherwise sends them to the sign-in box on the title
@@ -198,6 +280,7 @@ export class Menus {
     if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
+      case 'to-training': this.show('training'); break;
       case 'to-title': this.show('title'); break;
       case 'to-controls': this.controlsReturn = this.active; this.show('controls'); break;
       case 'controls-back': this.show(this.controlsReturn || 'title'); break;
@@ -207,6 +290,9 @@ export class Menus {
       case 'quit': this.cb.onQuit(); break;
       case 'rematch': this.cb.onStart(this.buildMatchSetup()); break;
       case 'rebind': this.beginRebind(el); break;
+      case 'padbind': this.beginPadRebind(el); break;
+      case 'reset-pad': this.pads?.resetMap(); this.renderControls(); this.focusAct('reset-pad'); break;
+      case 'donate': this.donate(); break;
       case 'share-fb': shareOnFacebook(this.shareContext()); break;
       case 'share-link': {
         const msg = this.screens[this.active]?.querySelector('.share-msg');
@@ -234,13 +320,16 @@ export class Menus {
 
   focusAct(act) { this.screens[this.active]?.querySelector(`[data-act="${act}"]`)?.focus(); }
 
-  // Fight is you (P1 keys) against CPU fighters, free-for-all.
+  // Fight is you against CPU fighters, free-for-all. Up to four people on one device
+  // (keyboard sections and controllers) can join in as P1-P4.
+  get players() { return Math.min(4, Math.max(1, this.setup.players || 1), this.setup.count); }
+
   buildMatchSetup() {
     const s = this.setup;
     return {
       mode: 'cpu', winsNeeded: s.winsNeeded, difficulty: s.difficulty, suddenDeath: s.suddenDeath, quality: s.quality,
       teams: { count: 0, names: [] },
-      slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i === 0 ? 0 : 'cpu', team: -1 })),
+      slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i < this.players ? i : 'cpu', team: -1, reward: i === 0 ? this.rewardTier : 0 })),
     };
   }
 
@@ -248,9 +337,11 @@ export class Menus {
     const s = this.setup;
     const key = el.dataset.opt, i = +el.dataset.i;
     const cyc = (arr, v) => arr[(arr.indexOf(v) + d + arr.length) % arr.length];
-    if (!['count', 'wins', 'diff', 'sudden', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
+    if (['touch', 'touchsize', 'rumble', 'seat'].includes(key)) { this.changeDevice(el, d); return; }
+    if (!['count', 'wins', 'diff', 'sudden', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team', 'players'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
     switch (key) {
-      case 'count': s.count = Math.min(8, Math.max(2, s.count + d)); break;
+      case 'count': s.count = Math.min(8, Math.max(2, s.players, s.count + d)); break;
+      case 'players': s.players = Math.min(4, Math.max(1, s.players + d)); s.count = Math.max(s.count, s.players, 2); break;
       case 'wins': s.winsNeeded = Math.min(5, Math.max(1, s.winsNeeded + d)); break;
       case 'diff': s.difficulty = cyc(DIFFS, s.difficulty); break;
       case 'sudden': s.suddenDeath = cyc(SUDDEN, s.suddenDeath); break;
@@ -288,7 +379,8 @@ export class Menus {
       `<button class="nav opt row" data-opt="${key}" ${extra}><span class="lbl">${label}</span><span class="val"><i>‹</i>${value}<i>›</i></span></button>`;
     const rules = this.screens.setup.querySelector('.rules');
     rules.innerHTML = [
-      opt('count', 'CPU opponents', s.count - 1),
+      opt('players', 'Players here', this.players === 1 ? 'Just you' : `${this.players} players`),
+      opt('count', 'CPU opponents', s.count - this.players),
       opt('wins', 'Rounds to win', s.winsNeeded),
       opt('diff', 'CPU skill', DIFFICULTY[s.difficulty].label),
       opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
@@ -301,14 +393,16 @@ export class Menus {
     const slots = this.screens.setup.querySelector('.slots');
     slots.innerHTML = s.slots.slice(0, s.count).map((slot, i) => {
       const def = slot.fighter >= 0 ? ROSTER[slot.fighter] : null;
-      const who = i === 0 ? 'You' : 'CPU';
-      const whoColor = i === 0 ? `style="color:${PLAYER_COLORS[0]}"` : '';
+      const human = i < this.players;
+      const who = !human ? 'CPU' : this.players === 1 ? 'You' : `P${i + 1}`;
+      const whoColor = human ? `style="color:${PLAYER_COLORS[i]}"` : '';
+      const how = human ? `<small class="how">${esc(this.deviceText(i))}</small>` : '';
       const sw = def ? hex(def.eyes) : '#888';
       const t = tc ? slot.team % tc : -1;
       const teamBtn = tc ? `<button class="nav opt team" data-opt="team" data-i="${i}" style="--tc:${hex(TEAM_COLORS[t])}"><span>${esc(cleanTeamName(s.teams.names[t], t))}</span></button>` : '';
       return `<div class="slot" style="--fc:${sw}">
         <span class="slot-n">${i + 1}</span>
-        <div class="who"><span ${whoColor}>${who}</span></div>
+        <div class="who"><span ${whoColor}>${who}</span>${how}</div>
         <button class="nav opt fighter" data-opt="fighter" data-i="${i}">
           <span class="fname">${def ? esc(def.name) : 'Random'}</span>
           <span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span>
@@ -316,8 +410,11 @@ export class Menus {
       </div>`;
     }).join('');
     slots.classList.toggle('teamed', !!tc);
-    this.screens.setup.querySelector('.setup-note').textContent =
-      `You against ${s.count - 1} CPU ${s.count === 2 ? 'fighter' : 'fighters'}, last one standing takes the round. Grab the power-ups and hit them from behind.`;
+    const cpus = s.count - this.players;
+    this.screens.setup.querySelector('.setup-note').textContent = (this.players === 1
+      ? `You against ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}`
+      : `${this.players} players${cpus ? ` and ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}` : ''}, everyone for themselves`) +
+      ', last one standing takes the round. Grab the power-ups and hit them from behind.';
   }
 
   updateTeamLabels() {
@@ -344,6 +441,78 @@ export class Menus {
     const rows = ACTIONS.map((a) => `<div class="ka">${ACTION_LABELS[a]}</div>${[0, 1, 2, 3].map((p) =>
       `<button class="nav key" data-act="rebind" data-p="${p}" data-a="${a}">${esc(keyLabel(this.bindings[p][a]))}</button>`).join('')}`).join('');
     el.innerHTML = head + rows;
+    this.renderPads();
+  }
+
+  // Controllers: who each connected pad plays as, its button layout (rebindable), rumble; and the touch options.
+  renderPads() {
+    const scr = this.screens.controls;
+    const list = scr.querySelector('.pads-list');
+    if (!list) return;
+    const pads = this.pads;
+    const live = pads ? [0, 1, 2, 3].filter((i) => pads.state(i)) : [];
+    list.innerHTML = !pads?.supported ? '<div class="none">This browser does not support game controllers.</div>'
+      : !live.length ? '<div class="none">No controller found. Plug one in or pair it, then press any button on it.</div>'
+        : live.map((i) => `<button class="nav opt row" data-opt="seat" data-i="${i}"><span class="lbl">${esc(pads.state(i).name)}</span>
+          <span class="val"><i>‹</i><b style="color:${PLAYER_COLORS[pads.seatOf(i)]}">plays as P${pads.seatOf(i) + 1}</b><i>›</i></span></button>`).join('');
+    const fam = live.length ? pads.state(live[0]).family : 'xbox';
+    const grid = scr.querySelector('.pad-grid');
+    if (pads?.supported) {
+      grid.innerHTML = ACTIONS.map((a) => `<div class="ka">${ACTION_LABELS[a]}</div>
+        <button class="nav key" data-act="padbind" data-a="${a}">${padKbd(pads.map[a], fam)}</button>`).join('') +
+        '<div class="ka">Pause</div><div class="ka">Start or View (fixed)</div>';
+    } else grid.innerHTML = '';
+    const opts = scr.querySelector('.touch-opts');
+    const s = this.setup;
+    const o = (key, label, value) => `<button class="nav opt row" data-opt="${key}"><span class="lbl">${label}</span><span class="val"><i>‹</i>${value}<i>›</i></span></button>`;
+    opts.innerHTML = (pads?.supported ? o('rumble', 'Controller rumble', pads.rumbleOn ? 'On' : 'Off') : '') +
+      o('touch', 'On-screen touch controls', { auto: 'Auto (touch screens)', on: 'Always on', off: 'Off' }[s.touch || 'auto']) +
+      o('touchsize', 'Touch button size', { 0.85: 'Small', 1: 'Medium', 1.18: 'Large' }[s.touchSize] || 'Medium');
+  }
+
+  changeDevice(el, d) {
+    const s = this.setup, key = el.dataset.opt;
+    if (key === 'rumble') { this.pads.setRumble(!this.pads.rumbleOn); if (this.pads.rumbleOn) [0, 1, 2, 3].forEach((i) => this.pads.rumble(i, 0.5, 0.6, 160)); }
+    if (key === 'seat') { const i = +el.dataset.i; this.pads.setSeat(i, (this.pads.seatOf(i) + d + 4) % 4); }
+    if (key === 'touch') s.touch = TOUCH[(TOUCH.indexOf(s.touch || 'auto') + d + TOUCH.length) % TOUCH.length];
+    if (key === 'touchsize') { const i = Math.max(0, TOUCH_SIZES.indexOf(s.touchSize)); s.touchSize = TOUCH_SIZES[(i + d + TOUCH_SIZES.length) % TOUCH_SIZES.length]; }
+    saveSetup(s);
+    this.cb.onTouchChange?.(s);
+    const focusKey = `${key}:${el.dataset.i ?? ''}`;
+    this.renderPads();
+    [...this.screens.controls.querySelectorAll('.nav')].find((x) => `${x.dataset.opt}:${x.dataset.i ?? ''}` === focusKey)?.focus({ preventScroll: true });
+  }
+
+  beginPadRebind(el) {
+    if (!this.pads?.supported) return;
+    this.padRebinding = el;
+    el.classList.add('listening');
+    el.textContent = 'Press a button';
+    this.pads.capture = (code) => this.endPadRebind(code);
+  }
+
+  endPadRebind(code) {
+    const el = this.padRebinding;
+    this.padRebinding = null;
+    if (!el) return;
+    if (code && !PAD_RESERVED.has(code)) this.pads.bind(el.dataset.a, code);
+    this.renderPads();
+    this.screens.controls.querySelector(`[data-act="padbind"][data-a="${el.dataset.a}"]`)?.focus();
+  }
+
+  // Refresh whatever lists controllers when one connects or leaves.
+  padsChanged() {
+    if (this.active === 'controls' && !this.padRebinding) this.renderPads();
+    if (this.active === 'setup') this.renderSetup();
+  }
+
+  // "Xbox controller", "arrow keys", "touch screen": how player i plays, for the fighter list.
+  deviceText(i) {
+    const slot = this.pads?.slotsFor(i)[0];
+    const keys = ['W A S D keys', 'arrow keys', 'number pad', 'Y B N M keys'][i];
+    if (slot !== undefined) return this.pads.state(slot).name;
+    if (i === 0 && devices.last === 'touch') return 'touch screen';
+    return keys;
   }
 
   beginRebind(el) {
@@ -393,6 +562,13 @@ export class Menus {
   }
 }
 
+// A controller button as a coloured glyph: the four face buttons keep their usual colours.
+export function padKbd(code, fam = 'xbox') {
+  const n = /^b([0-3])$/.exec(code || '');
+  const color = n ? (fam === 'nintendo' ? ['f1', 'f0', 'f3', 'f2'] : ['f0', 'f1', 'f2', 'f3'])[+n[1]] : '';
+  return `<kbd class="pad ${fam === 'xbox' || fam === 'nintendo' ? color : ''}">${esc(padLabel(code, fam))}</kbd>`;
+}
+
 // Pick the closest focusable element in an arrow direction.
 function spatialNext(cur, items, dir) {
   const r = cur.getBoundingClientRect();
@@ -403,11 +579,13 @@ function spatialNext(cur, items, dir) {
     const q = el.getBoundingClientRect();
     const x = q.left + q.width / 2, y = q.top + q.height / 2;
     const dx = x - cx, dy = y - cy;
+    // sideways distance counts from the edges, so a wide field above a short button still leads to it
+    const gapX = Math.max(0, q.left - r.right, r.left - q.right), gapY = Math.max(0, q.top - r.bottom, r.top - q.bottom);
     let main, cross;
-    if (dir === 'up') { main = -dy; cross = dx; } else if (dir === 'down') { main = dy; cross = dx; }
-    else if (dir === 'left') { main = -dx; cross = dy; } else { main = dx; cross = dy; }
+    if (dir === 'up') { main = -dy; cross = gapX + Math.abs(dx) * 0.1; } else if (dir === 'down') { main = dy; cross = gapX + Math.abs(dx) * 0.1; }
+    else if (dir === 'left') { main = -dx; cross = gapY + Math.abs(dy) * 0.1; } else { main = dx; cross = gapY + Math.abs(dy) * 0.1; }
     if (main <= 2) continue;
-    const score = main + Math.abs(cross) * 2.5;
+    const score = main + cross * 2.5;
     if (score < bestScore) { bestScore = score; best = el; }
   }
   if (!best && (dir === 'down' || dir === 'up')) {

@@ -1,5 +1,7 @@
 // Entry point: wires keyboard, menus, game and the audio layer.
-import { Keyboard, loadBindings } from './input.js';
+import { Keyboard, loadBindings, devices } from './input.js';
+import { Gamepads } from './gamepad.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
@@ -11,10 +13,20 @@ import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
 import { Account } from './account.js';
 import { AccountMenus } from './account-ui.js';
+import { Training } from './training.js';
+import { prompts, registerPromptDevice } from './prompts.js';
+import { padLabel } from './padmap.js';
 
 function boot() {
   const keyboard = new Keyboard();
   const bindings = loadBindings();
+  keyboard.bindings = bindings;
+  const pads = new Gamepads();
+  devices.pads = pads;
+  // phones and tablets start out showing touch prompts; a key or pad press switches them over
+  if (isTouchDevice() && matchMedia('(pointer: coarse)').matches) devices.last = devices.kind[0] = 'touch';
+  for (let p = 0; p < 4; p++) if (pads.slotsFor(p).length) devices.kind[p] = 'pad';
+  document.body.dataset.input = devices.last;
   let lastSetup = null;
 
   const params = new URLSearchParams(location.search);
@@ -30,10 +42,12 @@ function boot() {
   let accountUi = null;
   // every player signs in with a José Madrid Salsa account; their matches go on their profile
   const account = new Account(params);
+  let training = null;
 
   const menus = new Menus({
     keyboard, bindings,
     onStart: (setup) => {
+      training.stop();
       lastSetup = setup;
       online?.localMatch();
       audio.unlock();
@@ -42,16 +56,124 @@ function boot() {
       game.startMatch(setup, bindings);
     },
     onResume: () => { menus.hideAll(); game.setPaused(false); },
-    onRestart: () => { menus.hideAll(); game.setPaused(false); for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
-    onQuit: () => { audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
+    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
+    onQuit: () => { training.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
     onVolumeChange: (v) => audio.setVolumes(v),
-    onAct: (act, el) => { audio.unlock(); if (!accountUi?.onAct(act, el)) online?.onAct(act, el); },
-    onOpt: (key, el, d) => { if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d); },
-    onShow: (name) => { accountUi?.onShow(name); online?.onShow(name); },
+    onTouchChange: (s) => applyTouch(s),
+    pads,
+    onAct: (act, el) => {
+      audio.unlock();
+      // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
+      if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
+      if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
+      if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
+    },
+    onOpt: (key, el, d) => {
+      if (key === 'tr-fighter') return training.changeFighter(d);
+      if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
+    },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
   });
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
+  training = new Training({ game, menus, bindings, keyboard, events });
+  // ---- controllers and touch ----
+  const touch = new TouchControls({
+    onPause: () => keyboard.dispatch('Escape'),
+    onUsed: () => devices.used('touch', 0),
+    getFighter: () => (game.online ? game.localFighter : game.fighters.find((f) => f.isHuman && f.controller?.playerIndex === 0)) || null,
+  });
+  devices.touch = touch;
+  const applyTouch = (s) => { touch.setSize(s.touchSize || 1); touch.vibrate = pads.rumbleOn; };
+  applyTouch(menus.setup);
+  const toastEl = document.createElement('div');
+  toastEl.id = 'pad-toast';
+  document.body.appendChild(toastEl);
+  let toastTimer = 0;
+  const toast = (html) => {
+    toastEl.innerHTML = html;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('on'), 2600);
+  };
+  pads.menuMode = () => {
+    if (menus.active) return menus.active === 'pause' || menus.active === 'netpause' ? 'pause' : 'menu';
+    if (game.mode === 'match') return game.online && !game.localFighter ? 'spectate' : 'game';
+    return 'menu';
+  };
+  // pads send menu keys through the keyboard listeners, except while a keyboard key is being rebound.
+  // In a fight View pauses, or skips a tutorial lesson; in the practice room the stick clicks lay out gear and reset.
+  const padKeys = { View: () => (training.active ? 'Tab' : 'Escape'), L3: () => (training.active ? 'KeyG' : ''), R3: () => (training.active ? 'KeyR' : '') };
+  pads.emitKey = (code) => {
+    const key = padKeys[code] ? padKeys[code]() : code;
+    if (key && !menus.rebinding) keyboard.dispatch(key);
+  };
+  // tutorial and practice-room prompts name the real controller buttons and on-screen buttons
+  const padFam = () => { const s = [0, 1, 2, 3].find((i) => pads.state(i)); return s === undefined ? 'xbox' : pads.state(s).family; };
+  const PAD_EXTRA = { menu: 'b9', skip: 'b8', next: 'b8', dummy: 'b8', reset: 'b11', gear: 'b10' };
+  registerPromptDevice('gamepad', {
+    label: (a) => (a === 'move' ? 'Left stick' : padLabel(pads.map[a] || PAD_EXTRA[a], padFam())),
+    move: () => 'Left stick',
+  });
+  registerPromptDevice('touch', {
+    verb: 'Tap',
+    label: (a) => (/^slot\d$/.test(a) ? `bar slot ${a.slice(4)}` : a === 'move' ? 'thumbstick'
+      : touch.btns[a]?.querySelector('.tl').textContent || { menu: 'Pause', skip: 'Skip lesson', next: 'Skip lesson' }[a] || a),
+    move: () => 'the thumbstick on the left',
+  });
+  const syncPrompts = () => prompts.use(devices.last === 'pad' ? 'gamepad' : devices.last);
+  syncPrompts();
+  pads.onUse = (slot) => devices.used('pad', pads.seatOf(slot));
+  pads.onChange = ({ slot, on }) => {
+    if (on) {
+      const st = pads.state(slot);
+      toast(`<b>${st.name}</b> connected · plays as P${pads.seatOf(slot) + 1}`);
+      devices.used('pad', pads.seatOf(slot));
+      pads.rumble(slot, 0.4, 0.5, 180);
+    } else {
+      toast(`Controller ${slot + 1} disconnected`);
+      // a fighter whose controller drops mid-fight gets the pause screen instead of standing there
+      if (game.mode === 'match' && !game.online && !menus.active && game.phase === 'fight' &&
+        game.fighters.some((f) => f.isHuman && f.controller.playerIndex === pads.seatOf(slot))) {
+        game.setPaused(true);
+        menus.show('pause');
+      }
+    }
+    menus.padsChanged();
+  };
+  devices.listeners.add(() => {
+    document.body.dataset.input = devices.last;
+    syncPrompts();
+    game.inputChanged();
+  });
+  // shake the controller of whoever gets hit, harder for heavy blows and knockouts
+  const padsOf = (f) => {
+    if (!f) return [];
+    if (game.online) return f === game.localFighter ? [0, 1, 2, 3].filter((i) => pads.state(i)) : [];
+    return f.isHuman && f.controller?.playerIndex !== undefined ? pads.slotsFor(f.controller.playerIndex) : [];
+  };
+  const buzz = (f, strong, weak, ms) => {
+    for (const s of padsOf(f)) pads.rumble(s, strong, weak, ms);
+    if (touch.visible && touch.vibrate && f && f === touch.getFighter() && strong > 0.3) navigator.vibrate?.(Math.min(ms, 120));
+  };
+  events.on('hit', (d) => { buzz(d.fighter, d.heavy ? 0.85 : 0.35, d.heavy ? 0.6 : 0.4, d.heavy ? 230 : 110); buzz(d.by, 0, d.heavy ? 0.35 : 0.18, 60); });
+  events.on('block', (d) => buzz(d.fighter, 0.12, 0.3, 70));
+  events.on('parry', (d) => buzz(d.fighter, 0, 0.7, 90));
+  events.on('guardBreak', (d) => buzz(d.fighter, 0.7, 0.5, 260));
+  events.on('ko', (d) => { buzz(d.fighter, 1, 1, 480); buzz(d.by, 0.3, 0.5, 160); });
+  events.on('fight', () => { for (const f of game.fighters) buzz(f, 0.25, 0.25, 120); });
+  // the overlay shows during a fight on touch screens (or always, when switched on in Controls)
+  const touchLoop = () => {
+    const mode = menus.setup.touch || 'auto';
+    const wanted = mode === 'on' || (mode === 'auto' && devices.last === 'touch');
+    const me = touch.getFighter();
+    const fighting = game.mode === 'match' && !menus.active && game.phase !== 'matchOver' && !!me;
+    touch.setVisible(wanted && fighting, { spectating: !!me && !me.alive, ff: !game.online });
+    requestAnimationFrame(touchLoop);
+  };
+  requestAnimationFrame(touchLoop);
+
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
@@ -129,7 +251,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, account };
+  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

@@ -75,12 +75,22 @@ export class Pickups {
     p.ring.material.opacity = 0.45;
   }
 
+  // Training places gear by hand: the pad nearest (x, z) that is empty, or the nearest at all.
+  place(type, x, z) {
+    const by = (list) => list.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0];
+    const p = by(this.pads.filter((q) => !q.type)) || by([...this.pads]);
+    if (!p) return null;
+    this.setType(p, type);
+    this.world.effects.ring(p.x, 0.2, p.z, POWERUPS[type].color, 1.4, 0.5);
+    return p;
+  }
+
   // Simulation side (local games and the online host).
   update(dt, world) {
     if (!this.enabled) return;
     for (const p of this.pads) {
       if (!p.type) {
-        if (world.phase !== 'fight') continue;
+        if (world.phase !== 'fight' || this.manual) continue;
         p.timer -= dt;
         if (p.timer <= 0) { this.setType(p, pickType()); world.effects.ring(p.x, 0.2, p.z, POWERUPS[p.type].color, 1.4, 0.5); }
         continue;

@@ -138,11 +138,11 @@ export class Account {
   player(handle) { return this.call(`/api/arena/players/${encodeURIComponent(handle)}`, { auth: false }); }
 
   // Reports matches to the website. A match opens when its first round starts and is closed
-  // with this browser's own fighter's result when it ends. Watching, demos and guests record nothing.
+  // with this browser's own fighter's result when it ends. Watching, demos, training and guests record nothing.
   track({ events, game, session, onResult }) {
     let cur = null;
     events.on('roundStart', (d) => {
-      if (game.mode !== 'match') return;
+      if (game.mode !== 'match' || game.setup?.mode === 'practice') return;
       if (d.round === 1 || !cur) cur = this.openMatch(game, session);
       if (cur) cur.rounds = Math.max(cur.rounds + 1, d.round || 0);
     });

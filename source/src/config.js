@@ -1,5 +1,6 @@
 // Shared constants, the fighter roster, move data and default key bindings.
 
+import { padLabel } from './padmap.js';
 export const SIM_HZ = 120;
 export const SIM_DT = 1 / SIM_HZ;
 
@@ -12,12 +13,14 @@ export const ARENA = {
 };
 
 // Game modes. Fight is a quick match against the CPU, Fight online is the 30-second public queue,
-// Tournament is team-against-team on the Badlands with friendly fire and revives.
+// Tournament is team-against-team on the Badlands with friendly fire and revives, Training is the tutorial and practice room.
 // durability multiplies every fighter's health so fights last longer and team tactics matter.
 export const MODES = {
   cpu:        { label: 'Versus CPU', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
   queue:      { label: 'Online brawl', map: 'coliseum', durability: 1.7, powerups: true, friendlyFire: false, revive: false },
   tournament: { label: 'Tournament', map: 'badlands', durability: 2.6, powerups: true, friendlyFire: true, revive: true },
+  // tutorial and practice room: you and a training dummy, nobody can be knocked out, gear is placed by the lesson
+  practice:   { label: 'Training', map: 'coliseum', durability: 1, powerups: true, friendlyFire: false, revive: false },
 };
 export function modeRules(mode) { return { mode, ...(MODES[mode] || MODES.cpu) }; }
 
@@ -275,6 +278,7 @@ export const DIFFICULTY = {
 
 export function keyLabel(code) {
   if (!code) return '—';
+  if (code.startsWith('Pad:')) { const [, c, fam] = code.split(':'); return padLabel(c, fam); }
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   if (code === 'NumpadDecimal') return 'Num .';

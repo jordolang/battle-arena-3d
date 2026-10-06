@@ -156,9 +156,10 @@ export class Menus {
 
   get group() { return this.groupEl.value.trim(); }
 
-  // true when a fundraising group has been entered; otherwise points the player at the field
+  // true when a fundraising group has been entered; otherwise sends the player back to the field on the title
   requireGroup() {
     if (this.group) return true;
+    if (this.active !== 'title') this.show('title');
     this.groupErr.textContent = 'Enter your fundraising group to join the fight.';
     this.groupEl.classList.add('bad');
     this.groupEl.focus();
@@ -166,7 +167,8 @@ export class Menus {
   }
 
   runAct(act, el) {
-    if ((act === 'to-setup' || act === 'to-online') && this.active === 'title' && !this.requireGroup()) return;
+    const gated = act === 'net-host' || act === 'net-join' || ((act === 'to-setup' || act === 'to-online') && this.active === 'title');
+    if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
       case 'to-title': this.show('title'); break;

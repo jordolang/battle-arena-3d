@@ -9,6 +9,8 @@ import { NetSession, cleanCode } from './net/session.js';
 import { OnlineMenus } from './net/online-ui.js';
 import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
+import { Account } from './account.js';
+import { AccountMenus } from './account-ui.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -25,6 +27,9 @@ function boot() {
   const audio = initAudio(events, { getCamera: () => game.rig.camera });
   let online = null;
   let session = null;
+  let accountUi = null;
+  // every player signs in with a José Madrid Salsa account; their matches go on their profile
+  const account = new Account(params);
 
   const menus = new Menus({
     keyboard, bindings,
@@ -41,10 +46,12 @@ function boot() {
     onQuit: () => { audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
     onVolumeChange: (v) => audio.setVolumes(v),
-    onAct: (act, el) => { audio.unlock(); online?.onAct(act, el); },
-    onOpt: (key, el, d) => online?.onOpt(key, el, d),
-    onShow: (name) => online?.onShow(name),
+    onAct: (act, el) => { audio.unlock(); if (!accountUi?.onAct(act, el)) online?.onAct(act, el); },
+    onOpt: (key, el, d) => { if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d); },
+    onShow: (name) => { accountUi?.onShow(name); online?.onShow(name); },
   });
+  menus.account = account;
+  accountUi = new AccountMenus({ menus, account });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
@@ -52,10 +59,15 @@ function boot() {
   const chat = new ChatPanel({ session, keyboard });
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
+  account.track({ events, game, session, onResult: (r) => accountUi.showResult(r) });
+  // online, your fighter name is your leaderboard name
+  account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
+  account.refresh();
 
   game.onMatchEnd = (champ, fighters) => {
     // tournament matches go back to the bracket instead of the results screen
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
+    menus.screens.results.querySelector('.acct-result').textContent = account.recording ? 'Saving to your profile…' : '';
     setTimeout(() => { if (game.phase === 'matchOver') { game.keyboard.captureGameKeys = false; game.hud.show(false); menus.showResults(champ, fighters); } }, 2600);
   };
 
@@ -103,7 +115,7 @@ function boot() {
   // an invite link (?room=CODE) opens the join screen with the code filled in
   const room = cleanCode(params.get('room'));
   // (players without a fundraising group stay on the title until they enter one; the code waits in the join field)
-  if (room) { document.getElementById('net-code').value = room; if (menus.requireGroup()) menus.show('online'); }
+  if (room) { document.getElementById('net-code').value = room; if (account.ready && menus.requireGroup()) menus.show('online'); }
   // a tournament link (?t=CODE) opens the tournament screen with the code filled in
   const tcode = cleanCode(params.get('t'));
   if (tcode && !room) { document.getElementById('t-code').value = tcode; menus.show('tourney'); }
@@ -117,7 +129,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio };
+  window.__arena = { game, menus, events, bindings, session, audio, account };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

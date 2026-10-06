@@ -4,15 +4,17 @@
 // the match from the host's snapshots, slightly in the past so motion stays smooth.
 // Visual effects, announcer lines and gameplay events are replayed on the same
 // timeline, so a client also hears every `events` emit the audio pass listens to.
+import { wardrobe, sanitizeLook, randomLook } from '../cosmetics.js';
 import { ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
 import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
-import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, normFundraiserCode, verifyFundraiserCode } from './tournament.js';
+import { cleanTier } from '../fundraiser.js';
+import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 5;
+export const PROTOCOL = 7;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -59,6 +61,16 @@ export function randomCode() {
 export function cleanCode(s) {
   return String(s ?? '').toUpperCase().split('').filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, 5);
 }
+// Each player's saved looks by fighter id, as sent to the host: unknown fighters and items are dropped.
+// (Ownership is not checked here yet; player profiles will vouch for it later.)
+export function cleanLooks(map) {
+  const out = {};
+  if (map && typeof map === 'object') for (const def of ROSTER) if (map[def.id]) out[def.id] = sanitizeLook(map[def.id]);
+  return out;
+}
+// What a lobby member wears on the roster fighter `index`.
+const lookOf = (member, index) => sanitizeLook(member?.looks?.[ROSTER[index]?.id]);
+
 export function loadOnlineSettings() {
   try { return { name: '', fighter: -1, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return { name: '', fighter: -1 }; }
 }
@@ -101,6 +113,19 @@ function rgbToHex(c) {
   return '#' + m.slice(1, 4).map((x) => (+x).toString(16).padStart(2, '0')).join('');
 }
 
+// The group a fundraiser code made in the José Madrid Salsa admin panel belongs to, checked with the
+// site. Resolves to { name } or { why } (shown to the player); `notCode` explains text that is no code.
+export async function siteGroup(typed, notCode, tail) {
+  if (!isFundraiserCode(typed)) return { why: notCode };
+  try {
+    const name = await verifyFundraiserCode(typed);
+    if (name) return { name };
+    return { why: `That fundraiser code is not registered. Check it with your organizer.${tail}` };
+  } catch {
+    return { why: `The José Madrid Salsa site could not check your fundraiser code just now. Try again in a moment.${tail}` };
+  }
+}
+
 export class NetSession {
   constructor({ game, menus, keyboard, bindings }) {
     this.game = game;
@@ -112,6 +137,7 @@ export class NetSession {
     this.lobby = null;         // { code, rules, members, inMatch }
     this.myId = null;
     this.settings = loadOnlineSettings();
+    this.fundraiserCode = '';  // the code from the title screen, sent when joining an online battle
     this.onLobby = () => {};   // UI hooks, set by the online menus
     this.onMatchStart = () => {};
     this.onLeft = () => {};
@@ -159,7 +185,7 @@ export class NetSession {
     this.lobby = {
       code, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, color: 0, team: 0, role: admin ? 'admin' : 'player', group: '' }],
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
     };
     if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
     if (admin) {
@@ -191,16 +217,21 @@ export class NetSession {
         if (member || this.pending.has(id)) return;
         if (msg.v !== PROTOCOL) { this.reject(id, 'That room runs a different version of the game. Both players need the same file.'); return; }
         const tourney = this.kind === 'tournament';
-        if (!tourney && this.lobby.members.length >= MAX_PLAYERS) { this.reject(id, 'That battle is full (8 players).'); return; }
-        if (tourney && this.lobby.members.length >= MAX_TOURNAMENT) { this.reject(id, `That tournament is full (${MAX_TOURNAMENT} people).`); return; }
-        if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) { this.reject(id, 'That battle already started.'); return; }
+        const closed = this.closedReason();
+        if (closed) { this.reject(id, closed); return; }
         // in a tournament your fundraising group is your team; without one you can only watch.
         // When the admin requires fundraiser codes, fighters must bring one: it names their group.
+        // Online battles (rooms and the queue) are for enrolled groups only: the site checks the code.
         const group = cleanGroup(msg.group);
-        if (tourney && msg.role === 'player' && this.lobby.tournament.registration === 'code') {
+        const check = !tourney ? siteGroup(msg.fc, 'Online play needs your fundraising group\'s code. Type the code your organizer gave you on the title screen.', '')
+          : msg.role === 'player' && this.lobby.tournament.registration === 'code' ? this.registeredGroup(group) : null;
+        if (check) {
           this.pending.add(id);
-          this.registeredGroup(group).then((reg) => {
+          check.then((reg) => {
             if (!this.pending.delete(id) || !this.lobby || this.lobby.members.some((m) => m.id === id)) return;
+            // others may have filled the room, or the queue started, while the site was checking
+            const full = this.closedReason();
+            if (full) { this.reject(id, full); return; }
             if (reg.name) { this.admit(id, msg, cleanGroup(reg.name)); return; }
             this.reject(id, reg.why);
           });
@@ -212,6 +243,7 @@ export class NetSession {
       case 'pick':
         if (member && Number.isInteger(msg.fighter) && msg.fighter >= -1 && msg.fighter < ROSTER.length) {
           member.fighter = msg.fighter;
+          if (msg.looks) member.looks = cleanLooks(msg.looks);
           this.broadcastLobby();
         }
         break;
@@ -233,6 +265,14 @@ export class NetSession {
     }
   }
 
+  // Why nobody else can join right now, or null.
+  closedReason() {
+    if (this.kind === 'tournament') return this.lobby.members.length >= MAX_TOURNAMENT ? `That tournament is full (${MAX_TOURNAMENT} people).` : null;
+    if (this.lobby.members.length >= MAX_PLAYERS) return 'That battle is full (8 players).';
+    if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) return 'That battle already started.';
+    return null;
+  }
+
   // Let a player or watcher into the lobby. `group` is their checked fundraising group (tournaments only).
   admit(id, msg, group) {
     const tourney = this.kind === 'tournament';
@@ -243,7 +283,8 @@ export class NetSession {
     const names = new Set(this.lobby.members.map((m) => m.name.toLowerCase()));
     for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
     const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
-    this.lobby.members.push({ id, name, fighter, color, team: this.smallestTeam(), role, group: tourney ? group : '' });
+    // reward: the cosmetic their fundraising group earned by reaching its goal (fundraiser.js)
+    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
     if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
     this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
     if (tourney) {
@@ -260,18 +301,7 @@ export class NetSession {
   async registeredGroup(typed) {
     const local = findFundraiser(this.fundraisers, typed);
     if (local) return { name: local.name };
-    const codeLike = /^JM[A-Z0-9]{8}$/.test(normFundraiserCode(typed));
-    if (codeLike) {
-      try {
-        const remote = await verifyFundraiserCode(typed);
-        if (remote) return { name: remote };
-      } catch {
-        return { why: 'The José Madrid Salsa site could not check your fundraiser code just now. Try again in a moment, or join to watch.' };
-      }
-    }
-    return { why: !codeLike
-      ? 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.'
-      : 'That fundraiser code is not registered. Check it with your organizer, or join to watch.' };
+    return siteGroup(typed, 'This tournament needs your fundraiser code, not the group name. Type the code your organizer gave you on the title screen.', ' Or join to watch.');
   }
 
   reject(id, reason) {
@@ -396,8 +426,8 @@ export class NetSession {
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const fighters = [];
     [pa, pb].forEach((list, side) => {
-      for (const mem of list) fighters.push({ def: pick(mem.fighter), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side });
-      for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), pname: null, color: null, owner: null, team: side });
+      for (const mem of list) { const def = pick(mem.fighter); fighters.push({ def, look: lookOf(mem, def), pname: mem.name, color: ONLINE_COLORS[mem.color], owner: mem.id, team: side, reward: mem.reward || 0 }); }
+      for (let k = list.length; k < size; k++) fighters.push({ def: pick(-1), look: randomLook(), pname: null, color: null, owner: null, team: side });
     });
     t.current = { r: m.r, i: m.i, a: m.a, b: m.b };
     const label = `${roundName(t.bracket, m.r)} · ${t.names[m.a]} vs ${t.names[m.b]}`;
@@ -513,15 +543,23 @@ export class NetSession {
   pickFighter(d) {
     const n = ROSTER.length;
     const cur = this.settings.fighter;
-    this.settings.fighter = ((cur + 1 + d + n + 1) % (n + 1)) - 1; // -1 = random
+    this.setFighter(((cur + 1 + d + n + 1) % (n + 1)) - 1); // -1 = random
+  }
+
+  // Your fighter (roster index, -1 = random) and your looks from the wardrobe, sent to the room.
+  // Also called after the wardrobe changes, so the room sees a new outfit at once.
+  setFighter(index) {
+    this.settings.fighter = index;
     saveOnlineSettings(this.settings);
+    const looks = wardrobe.allLooks();
     if (this.isHost) {
-      this.lobby.members[0].fighter = this.settings.fighter;
+      this.lobby.members[0].fighter = index;
+      this.lobby.members[0].looks = looks;
       this.broadcastLobby();
     } else if (this.role === 'client') {
       const me = this.lobby?.members.find((m) => m.id === this.myId);
-      if (me) me.fighter = this.settings.fighter;
-      this.transport.sendHost({ t: 'pick', fighter: this.settings.fighter });
+      if (me) { me.fighter = index; me.looks = looks; }
+      this.transport.sendHost({ t: 'pick', fighter: index, looks });
       this.onLobby();
     }
   }
@@ -533,9 +571,9 @@ export class NetSession {
     const count = Math.max(rules.count, members.length, 2);
     const pick = (f) => (f >= 0 ? f : Math.floor(Math.random() * ROSTER.length));
     const tc = rules.teams || 0;
-    const fighters = members.map((m) => ({ def: pick(m.fighter), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1 }));
+    const fighters = members.map((m) => { const def = pick(m.fighter); return { def, look: lookOf(m, def), pname: m.name, color: ONLINE_COLORS[m.color], owner: m.id, team: tc ? m.team % tc : -1, reward: m.reward || 0 }; });
     while (fighters.length < count) {
-      const cpu = { def: pick(-1), pname: null, color: null, owner: null, team: -1 };
+      const cpu = { def: pick(-1), look: randomLook(), pname: null, color: null, owner: null, team: -1 };
       if (tc) {
         const sizes = Array(tc).fill(0);
         for (const f of fighters) sizes[f.team]++;
@@ -547,7 +585,7 @@ export class NetSession {
     this.launch({ setup: { mode: rules.mode || 'queue', winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
   }
 
-  // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team }], label?, watchHint? }.
+  // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team, reward }], label?, watchHint? }.
   launch(spec) {
     const { rules, members } = this.lobby;
     const fighters = spec.fighters;
@@ -654,7 +692,7 @@ export class NetSession {
     transport.onMessage = (id, msg) => this.clientReceive(msg);
     transport.onHostLost = () => this.leave('Lost the connection to the host.');
     this.chat = [];
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, role, group: cleanGroup(group) });
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
     this.hostHeard = performance.now();
     let lastTick = performance.now();
     this.pingTimer = setInterval(() => {

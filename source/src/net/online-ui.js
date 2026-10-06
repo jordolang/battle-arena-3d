@@ -2,8 +2,10 @@
 // menu and the results buttons. Plugs into Menus through its onAct/onOpt/onShow hooks.
 import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
 import { moveSummary } from '../ui.js';
+import { lookSummary } from '../cosmetics.js';
 import { shareOnFacebook } from '../share.js';
 import { ONLINE_COLORS, MAX_PLAYERS, cleanCode, cleanName, saveOnlineSettings } from './session.js';
+import { isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -92,8 +94,9 @@ export class OnlineMenus {
         if (act === 'net-requeue') this.menus.show('online');
         this.prepareName();
         this.busy = true;
-        this.setStatus('Looking for a battle…');
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus('Looking for a battle…');
           await s.queue();
           this.menus.show(s.game.online === 'client' ? null : 'lobby');
         } catch (err) {
@@ -111,8 +114,9 @@ export class OnlineMenus {
         if (this.busy) return;
         this.prepareName();
         this.busy = true;
-        this.setStatus('Opening a room…');
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus('Opening a room…');
           await s.host();
           this.menus.show('lobby');
         } catch (err) {
@@ -126,8 +130,9 @@ export class OnlineMenus {
         if (code.length !== 5) { this.setStatus('Type the 5-character room code from the host first.', true); this.codeInput.focus(); return; }
         this.prepareName();
         this.busy = true;
-        this.setStatus(`Joining room ${code}…`);
         try {
+          if (!await this.checkFundraiser()) return;
+          this.setStatus(`Joining room ${code}…`);
           await s.join(code);
           this.menus.show(s.game.online === 'client' ? null : 'lobby');
         } catch (err) {
@@ -142,6 +147,29 @@ export class OnlineMenus {
       case 'net-leave-title': this.lastKind = null; s.leave(null, true); this.menus.cb.onQuit(); break;
       case 'net-resume': this.menus.hideAll(); break;
     }
+  }
+
+  // Character select from a lobby ('net' = this room or queue, 't' = the tournament lobby). Whatever you
+  // change in the wardrobe reaches the room when you leave the screen.
+  openSelect(key) {
+    const s = this.session;
+    if (!s.connected) return;
+    const back = key === 't' ? 'tlobby' : 'lobby';
+    this.menus.select.open({
+      context: key === 't' ? 'Tournament' : s.kind === 'queue' ? 'Online brawl' : 'Online room',
+      fighter: s.settings.fighter,
+      confirm: (def) => (def ? `Fight as ${def.name}` : 'Fight as a random fighter'),
+      onConfirm: (f) => { s.settings.fighter = f; },
+      onClose: (f, ok) => {
+        if (!s.connected) return;
+        s.setFighter(ok ? f : s.settings.fighter);
+        if (key === 't') this.tourney?.render(true); else if (this.menus.active === 'lobby') this.renderLobby(true);
+        this.menus.screens[back].querySelector('[data-cs]')?.focus({ preventScroll: true });
+      },
+      // a new outfit reaches the room as soon as you put it on
+      onChange: () => { if (s.connected) s.setFighter(s.settings.fighter); },
+      back,
+    });
   }
 
   onOpt(key, el, d) {
@@ -159,6 +187,29 @@ export class OnlineMenus {
     s.settings.name = cleanName(this.nameInput.value);
     this.nameInput.value = s.settings.name;
     saveOnlineSettings(s.settings);
+  }
+
+  // Online battles are for enrolled fundraising groups: the José Madrid Salsa site checks the code
+  // typed on the title screen, so a code made in its admin panel works on any device. Resolves to
+  // the group's name, or null after telling the player why not. (The host checks everyone again.)
+  async checkFundraiser() {
+    const typed = this.menus.group;
+    this.session.fundraiserCode = typed;
+    if (!isFundraiserCode(typed)) {
+      this.setStatus('');
+      this.menus.flagGroup('Online play needs your group\'s fundraiser code (like JM-7KQ4-X2PD), not its name. Ask your organizer for it.');
+      return null;
+    }
+    this.setStatus('Checking your fundraiser code…');
+    try {
+      const name = await verifyFundraiserCode(typed);
+      if (name) return name;
+      this.setStatus('');
+      this.menus.flagGroup('That fundraiser code is not registered. Check it with your organizer.');
+    } catch {
+      this.setStatus('Could not reach the José Madrid Salsa site to check your fundraiser code. Check your connection and try again.', true);
+    }
+    return null;
   }
 
   inviteLink() {
@@ -229,7 +280,8 @@ export class OnlineMenus {
       const color = m ? ONLINE_COLORS[m.color] : '';
       const who = m ? `<span style="color:${color}">${esc(m.name)}</span>${mine ? '<small>You</small>' : ''}` : '<span>CPU</span>';
       const fname = m ? (def ? esc(def.name) : 'Random') : 'Random';
-      const ftitle = def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'Fills the empty seat';
+      const dress = m && def ? lookSummary(m.looks?.[def.id]) : '';
+      const ftitle = (dress ? `<em class="dress">${esc(dress)}</em> · ` : '') + (def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'Fills the empty seat');
       const inner = `<span class="fname">${fname}</span><span class="ftitle">${ftitle}</span>`;
       let team = '';
       if (tc) {
@@ -241,10 +293,11 @@ export class OnlineMenus {
       rows.push(`<div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}">
         <span class="slot-n">${i + 1}</span>
         <div class="who">${who}</div>
-        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter">${inner}</button>` : `<div class="fighter">${inner}</div>`}${team}
+        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter" data-cs="net">${inner}</button>` : `<div class="fighter">${inner}</div>`}${team}
       </div>`);
     }
     el.querySelector('.net-slots').innerHTML = rows.join('');
+    el.querySelector('.net-slots').dataset.html = '';
     el.querySelector('.net-slots').classList.toggle('teamed', !!tc);
 
     const humans = L.members.length;
@@ -282,12 +335,15 @@ export class OnlineMenus {
       const def = m && m.fighter >= 0 ? ROSTER[m.fighter] : null;
       const mine = m && m.id === s.myId;
       const who = m ? `<span style="color:${ONLINE_COLORS[m.color]}">${esc(m.name)}</span>${mine ? '<small>You</small>' : ''}` : '<span>CPU</span>';
-      const inner = `<span class="fname">${m ? (def ? esc(def.name) : 'Random') : 'Waiting…'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'A CPU takes this seat if nobody joins'}</span>`;
+      const dress = m && def ? lookSummary(m.looks?.[def.id]) : '';
+      const inner = `<span class="fname">${m ? (def ? esc(def.name) : 'Random') : 'Waiting…'}</span><span class="ftitle">${dress ? `<em class="dress">${esc(dress)}</em> · ` : ''}${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'A CPU takes this seat if nobody joins'}</span>`;
       rows.push(`<div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><span class="slot-n">${i + 1}</span><div class="who">${who}</div>
-        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter">${inner}</button>` : `<div class="fighter">${inner}</div>`}</div>`);
+        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter" data-cs="net">${inner}</button>` : `<div class="fighter">${inner}</div>`}</div>`);
     }
-    el.querySelector('.net-slots').innerHTML = rows.join('');
-    el.querySelector('.net-slots').classList.remove('teamed');
+    // the countdown re-renders every second: only touch the seats when they changed, so clicks on them land
+    const slotsEl = el.querySelector('.net-slots'), slotsHtml = rows.join('');
+    if (slotsEl.dataset.html !== slotsHtml) { slotsEl.innerHTML = slotsHtml; slotsEl.dataset.html = slotsHtml; }
+    slotsEl.classList.remove('teamed');
     el.querySelector('.net-note').textContent = `${L.members.length} in the queue. Up to ${MAX_PLAYERS} fight; CPUs fill a battle up to 4.`;
     const focusKey = keepFocus && el.contains(document.activeElement) ? `${document.activeElement.dataset.opt || ''}|${document.activeElement.dataset.act || ''}` : null;
     const actions = el.querySelector('.net-actions');

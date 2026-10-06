@@ -87,7 +87,7 @@ export class TournamentMenus {
     const groups = this.settings.groups;
     this.screen.querySelector('.t-codes-help').textContent = this.settings.registration === 'open'
       ? 'Who can fight is set to any group name, so codes are not checked. Switch it to Fundraiser code to require them.'
-      : 'Players fight with a fundraiser code typed on the title screen: one made here (saved in this browser, so host from here) or one made in the José Madrid Salsa admin panel. Anyone can watch.';
+      : 'Players fight with a fundraiser code typed on the title screen. Codes made in the José Madrid Salsa admin panel (Fundraisers, Battle Arena, Game codes) work on any device and for online play too; codes made here are saved only in this browser, so host from here. Anyone can watch.';
     this.screen.querySelector('.t-codes-list').innerHTML = groups.map((g) => `<div class="t-code-row"><span class="g">${esc(g.name)}</span><b class="code-chip">${esc(g.code)}</b>` +
       `<button class="nav link" data-act="t-copycode" data-id="${esc(g.code)}">Copy</button>` +
       `<button class="nav link kick" data-act="t-delcode" data-id="${esc(g.code)}" title="Remove ${esc(g.name)}">✕</button></div>`).join('') +
@@ -196,7 +196,7 @@ export class TournamentMenus {
       }
       case 't-copycode': {
         const g = this.settings.groups.find((x) => x.code === el?.dataset.id);
-        if (g) await this.copyText(`${g.name}: your José Madrid Salsa Battle Arena fundraiser code is ${g.code}. Type it in the Fundraising group box on the title screen.`, `Copied ${g.name}'s code.`);
+        if (g) await this.copyText(`${g.name}: your José Madrid Salsa Battle Arena fundraiser code is ${g.code}. Type it in the Fundraiser code box on the title screen.`, `Copied ${g.name}'s code.`);
         return true;
       }
       case 't-copycodes':
@@ -283,7 +283,7 @@ export class TournamentMenus {
     const me = s.me;
     const def = me && me.fighter >= 0 ? ROSTER[me.fighter] : null;
     el.querySelector('.t-me').innerHTML = me?.role === 'player'
-      ? `<div class="col-h">Your fighter</div><div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><button class="nav opt fighter" data-opt="t-fighter"><span class="fname">${def ? esc(def.name) : 'Random'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span></button></div>`
+      ? `<div class="col-h">Your fighter</div><div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><button class="nav opt fighter" data-opt="t-fighter" data-cs="t"><span class="fname">${def ? esc(def.name) : 'Random'}</span><span class="ftitle">${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : 'Any of the eight'}</span></button></div>`
       : '';
 
     // the bracket

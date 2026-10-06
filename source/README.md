@@ -4,6 +4,8 @@ A 3D last-one-standing brawler in Three.js with three ways to play:
 - **Fight**: you against 1 to 7 CPU fighters in the coliseum.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
+- **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
+  guns and spells) and a free practice room, both against a training dummy that cannot be knocked out.
 
 Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
 Power-ups, backstabs, parries and (in tournaments) friendly fire and revives make positioning and teamwork matter.
@@ -16,13 +18,63 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
 - Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`,
   then copy `dist/battle-arena.html` to the repo root as `index.html`.
 
+## José Madrid Salsa accounts, profiles and leaderboards
+- **Everyone signs in.** The title screen asks players to sign in with their José Madrid Salsa account before they can
+  fight in any mode. **Sign in to play** goes to `https://www.josemadrid.net/battle-arena/connect`, where they sign in
+  (or make a free account) and press **Play as …**; the website sends them straight back to the game, invite and
+  tournament links included. The game keeps a sign-in token in the browser for 90 days; **Sign out** on the profile
+  screen ends it.
+- **Profile** (title screen, **My profile**): the fighter name shown on the boards and online (players can rename
+  themselves), their fundraising group, wins, losses, win rate, knockouts, rounds won, damage, win streaks, all-time
+  rank, favourite fighter and recent matches. A player whose account already belongs to a group (a claimed
+  fundraiser character, or the fundraiser they run) is in that group automatically; anyone else picks a group from the
+  fundraisers running now, and can switch once a week.
+- **Leaderboards** (title screen): fighters or fundraising groups, this week, this month or all time, over every match,
+  versus players only, or one mode. Ranked by wins, then knockouts. Choose a fighter to see their profile.
+- **What gets recorded**: every match a signed-in player fights in (versus CPU, online, tournament) is opened on the
+  website when its first round starts and closed with that player's own result when it ends. The website refuses
+  results a match cannot produce (too fast, too many knockouts or too much damage). Spectating records nothing.
+- **Offline**: if the website cannot be reached a signed-in player keeps playing, but nothing is recorded.
+- **Testing**: `?account-api=URL` points the game at another copy of the website. On a local copy (localhost or a
+  file) **Play as a guest** skips sign-in, and `?autotest` plays as a guest. The website only hands sign-in tokens to
+  the published game (`https://battle-arena-3d-mauve.vercel.app`); other addresses are added on the website with
+  `ARENA_GAME_ORIGINS`.
+
 ## José Madrid Salsa fundraiser
 - The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
   a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).
-- Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's name or
+- Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's fundraiser
   code, and Fight online and fighting in a tournament stay locked until it is filled in (Fight versus the CPU and watching a tournament
-  do not need one). The value is remembered in the browser only; it is not yet checked against the fundraiser system.
+  do not need one). Admins make codes on the website at **Admin → Fundraisers → Battle Arena → Game codes**, so a code
+  works on any device.
+- **Online battles** (the queue and invite rooms) need a code the website confirms: the game checks it with
+  `POST https://www.josemadrid.net/api/arena/game-codes/verify` before queueing, and the host checks every player who
+  joins again, so a group name or a revoked code can't get in.
 - In tournaments the group is the team: everyone who typed the same group (case and spacing don't matter) fights together.
+- **Donate to your team**: under the group field the title screen shows the group's fundraiser from the José Madrid
+  Salsa fundraising site: how much it has raised toward its goal and a **Donate to (group)** button that opens the
+  group's own page (`https://fundraising.josemadrid.net/fundraise/<slug>`) in a new tab, where the site takes the
+  donation. The game never handles payments. The group is matched by its name, its school or its page name; a fundraiser
+  code is first turned into its group's name. A group that isn't found gets **Find your group** (the site's group list).
+  The results screen has the same button.
+- **Goal rewards (cosmetic only)**: a group that has raised half its goal unlocks the **Silver Laurel** (a silver laurel
+  wreath and a silver ring round the fighter's floor marker); at the full goal, the **Golden Crown** (a golden crown,
+  a gold ring and gold-glinting trim). The player's fighter wears it versus the CPU, online and in tournaments, and
+  its name tag gets a ❦ or ♛. Rewards change nothing about how a fighter plays.
+- Where the numbers come from: `api/fundraisers.js` (a Vercel function next to `api/share.js`) reads this month's team
+  standings from the fundraising site's public arena snapshot (`/api/fundraiser/arena/<YYYY-MM>/state`, the same data its
+  spectator arena shows) and passes on each team's name, page, goal and amount raised, cached for a minute. The hosted game
+  asks it at `/api/fundraisers`; the single-file copy asks the hosted one. `?fundraisers-api=URL` points at another
+  copy for testing, and the `FUNDRAISING_SITE_URL` environment variable moves the function to another fundraising site.
+
+## Training
+- The tutorial shows one lesson at a time in a panel on the left and moves on when you have done it (Tab skips a lesson).
+  The dummy stands still, holds its guard or throws slow punches, depending on the lesson.
+- The practice room shows your last hit, the current combo and your best combo. Tab changes what the dummy does,
+  G lays out two pieces of gear at a time, R puts you both back in the middle. Mana refills itself there.
+- Prompts follow the input device in use (`src/prompts.js`): keys on a keyboard, the real (and rebound) buttons of the
+  connected controller, the on-screen button names on a touch screen. `main.js` registers the gamepad and touch labels.
+  On a controller View skips a lesson (or cycles the dummy); in the practice room L3 lays out gear and R3 resets.
 
 ## Fight online: the 30-second queue
 - Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
@@ -42,7 +94,7 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   title screen can fight, and they join the team of the group the code belongs to; anyone can still watch. Codes come
   from two places: the José Madrid Salsa admin panel (website or desktop app), which the host checks with
   `POST https://www.josemadrid.net/api/arena/game-codes/verify`, or the **Fundraiser codes** list on the admin card
-  (type a group name, **Make code**; saved only in that browser). Set **Who can fight** to **Any group name** to skip
+  (type a group name, **Make code**; saved only in that browser and good for that tournament only). Set **Who can fight** to **Any group name** to skip
   codes. `?codes-api=URL` points the check at another server for testing.
 - **Teams**: enter your fundraiser code (or, if the admin made none, your group's name) on the title screen, open
   Tournament, type the tournament code and press **Fight for my group**. Pick your fighter in the lobby.
@@ -80,6 +132,32 @@ several tabs of one browser and no network, or `?peerserver=host:port` to use yo
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
+
+### Game controllers (`src/gamepad.js`, `src/padmap.js`)
+Up to four pads (Xbox, PlayStation, Switch Pro, most USB/Bluetooth pads in standard mapping). Pad N plays as PN by
+default; the Controls screen lists connected pads, lets each be seated as P1-P4, rebinds every action (shared by all
+pads) and turns rumble on or off. A pad also steers that player's keyboard section, so mixing works.
+
+| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Pause |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | Start or View |
+
+Menus: D-pad or stick to move (held directions repeat), A select, B back, LB/RB change a value, Start pauses or
+selects. Presses that drive a menu are not counted in the fight, so picking Resume with A does not also jump.
+Unplugging a pad mid-fight pauses a local match. Online, any connected pad steers your fighter. When you are out,
+hold A to fast-forward. Rumble: hits (harder for heavy ones), blocks, parries, guard breaks, knockouts, "Fight!".
+
+### Touch screens (`src/touch.js`)
+Shown during a fight on phones and tablets (Controls: Auto, Always on, Off; Small/Medium/Large buttons). The left
+thumb lands anywhere on the left side and becomes a floating analog stick. The right side has Punch, Kick, Jump,
+Block and Dodge (hold both), Special, the fighter's three skills (named, with a cooldown sweep, dimmed without mana)
+and Use/Next for the item bar; tapping a slot on the item bar fires it. Several fingers work at once and a thumb can
+slide from one button to the next. Pause and full-screen buttons sit top-left; upright phones get a narrower layout
+and a hint to turn sideways. Keyboard or pad input hides the overlay again (laptops with touch screens).
+
+### Couch play
+Fight setup has **Players here** (1-4). Each local player uses their keyboard section and/or their controller;
+the fighter list shows which device each one has, and the opening hints show the glyphs of the device in use.
 
 Combos: punch ×3 (ends in a hook), punch-punch-kick, kick-kick (knockdown roundhouse), jump then kick (dive kick).
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
@@ -138,12 +216,42 @@ Sudden death (default 75 s) brings in a closing ring of fire.
 
 Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dodge out of it in time.
 
+## Character select, clothing and the locker room
+- **Character select** opens from the Versus CPU screen (Enter on a fighter), from your seat in an online room or the
+  queue, and from your fighter in a tournament lobby. It shows every fighter with a portrait, a turning 3D preview on a
+  pedestal (drag to turn), their health, power and speed, their special and skills, and the wardrobe.
+- **Locker room** (title screen) is the same screen for browsing and dressing all eight fighters. The one you confirm
+  becomes your usual fighter, offline and online.
+- **Clothing** is real clothing, worn over the body and moving with it: tops (Arena Tee, Tank Top, Hoodie, Serape
+  Poncho, Salsa Chef Apron, Biker Jacket, Charro Jacket, José Madrid Tee, Suit of Lights), pants (Fight Shorts, Jeans,
+  Cargo Pants, Charro Trousers, José Madrid Joggers, Gold Breeches), shoes (High-tops, Huaraches, Cowboy Boots, Golden
+  Boots) and gloves (Fight Gloves, Boxing Gloves, Iron Gauntlets, Salsa Chef Mitts). On top of that: colour schemes
+  (Salsa Roja, Salsa Verde, Chipotle Smoke, Mango Habanero, Ghost Pepper, Golden Jar and more) that dye the gi and any
+  dyeable clothes, headgear (Bandana, Luchador Mask, Sombrero, Rider's Hat & Mask, Crown of Chilies, Salsa King Crown),
+  back pieces (Battle Cape, Chili Banner, Salsa Jar Pack, José Madrid Standard, Golden Mantle) and victory poses
+  (Fist to the Sky, Salsa Step, Double Flex, Come On Then, Matador's Bow). Hovering an item tries it on; Enter wears it.
+  Every fighter keeps their own look. Clothes are looks only: they never change how a fighter plays.
+- **Body** (first wardrobe tab): skin tone, hair style (bald, short, long, top knot, mohawk, spiky, braids), hair colour,
+  beard on or off and eye glow, each defaulting to the fighter's own. Body options are always free.
+- **Unlocks**: some items are free; the rest unlock from your record (matches finished, matches won, rounds won,
+  knockouts), and the José Madrid pieces need a fundraising group on the title screen. New unlocks are listed on the
+  results screen. CPU fighters dress themselves, sometimes in gear you have not earned yet.
+- **Online**: your saved looks travel with you (`hello` and `pick` carry them; the host puts each fighter's look in the
+  match spec), so everyone sees what you wear. Protocol is now 7.
+- **Storage and profiles**: the wardrobe (record, looks, usual fighter) is kept in this browser under
+  `battle-arena.wardrobe.v1`. Player profiles take it over with `wardrobe.connectProfile(adapter)` in `src/cosmetics.js`:
+  the adapter can supply the account's stats, items granted outright, fundraiser membership and saved looks, and
+  receives finished matches and wardrobe changes.
+
 ## Code map (`src/`)
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
   (sculpted faces, hair, hands and muscled limbs merged per material), poses, breathing, blinking and gaze
-- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard and human controller
+- `specials.js` special moves, skills, guns, spells and projectiles · `ai.js` CPU controller · `input.js` keyboard, device registry and human controller (keys + pads + touch)
 - `items.js` weapon, gun and armor meshes and the ability bar icons
+- `cosmetics.js` clothing, colour schemes, headgear, back pieces and victory poses, unlock rules and the wardrobe ·
+  `wardrobeModels.js` the 3D clothing and accessories · `bodyShapes.js` limb profiles shared by bodies and clothes ·
+  `charSelect.js` the character select and locker room screen
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding

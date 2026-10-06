@@ -47,6 +47,8 @@ function boot() {
   });
   session = new NetSession({ game, menus, keyboard, bindings });
   online = new OnlineMenus({ menus, session });
+  // a private room stays open after a match, so a shared result doubles as an invite into it
+  menus.shareRoom = () => (session.connected && session.kind === 'room' ? session.lobby.code : '');
   const chat = new ChatPanel({ session, keyboard });
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));

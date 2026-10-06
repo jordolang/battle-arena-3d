@@ -1,4 +1,5 @@
 // Keyboard-first menus: title, fight setup, controls/rebinding, pause, results.
+import { shareOnFacebook, shareAnywhere } from './share.js';
 import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BINDINGS, SPECIALS, SKILLS, keyLabel,
   TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
 import { saveBindings } from './input.js';
@@ -185,11 +186,29 @@ export class Menus {
       case 'quit': this.cb.onQuit(); break;
       case 'rematch': this.cb.onStart(this.buildMatchSetup()); break;
       case 'rebind': this.beginRebind(el); break;
+      case 'share-fb': shareOnFacebook(this.shareContext()); break;
+      case 'share-link': {
+        const msg = this.screens[this.active]?.querySelector('.share-msg');
+        shareAnywhere(this.shareContext()).then((text) => {
+          if (!msg) return;
+          msg.textContent = text;
+          clearTimeout(this.shareMsgTimer);
+          this.shareMsgTimer = setTimeout(() => { msg.textContent = ''; }, 4000);
+        });
+        break;
+      }
       case 'reset-keys':
         DEFAULT_BINDINGS.forEach((b, i) => Object.assign(this.bindings[i], b));
         saveBindings(this.bindings); this.renderControls(); this.focusAct('reset-keys'); break;
       default: this.cb.onAct?.(act, el);
     }
+  }
+
+  // What a share button posts: the last match from the results screen, plus the online room to join
+  // when one is open (main.js sets shareRoom); the title screen shares the game itself.
+  shareContext() {
+    if (this.active !== 'results') return {};
+    return { result: this.lastResult, room: this.shareRoom?.() || '' };
   }
 
   focusAct(act) { this.screens[this.active]?.querySelector(`[data-act="${act}"]`)?.focus(); }
@@ -340,6 +359,9 @@ export class Menus {
       el.querySelector('.champ').innerHTML = `<span style="color:${hex(champ.def.eyes)}">${esc(champ.name)}</span>`;
       el.querySelector('.champ-sub').textContent = `${champ.label === 'CPU' ? 'CPU' : champ.label} · ${champ.def.title}`;
     }
+    this.lastResult = teamed
+      ? { winner: champ.teamName, team: true, fighters: fighters.length }
+      : { winner: champ.name, by: champ.label, title: champ.def.title, fighters: fighters.length };
     const sorted = [...fighters].sort((a, b) => (teamed ? (b.team === champ.team) - (a.team === champ.team) : 0) ||
       b.stats.wins - a.stats.wins || b.stats.kos - a.stats.kos || b.stats.damage - a.stats.damage);
     el.querySelector('thead').innerHTML = `<tr><th>Fighter</th><th>Played by</th>${teamed ? '<th>Team</th>' : ''}<th>Rounds</th><th>KOs</th><th>Damage</th></tr>`;

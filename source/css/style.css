@@ -191,6 +191,18 @@ button { font: inherit; color: inherit; }
 }
 .big:focus, .big:hover { color: var(--bone); transform: translateX(4px); }
 .big:focus::before, .big:hover::before { transform: scaleX(1); }
+.share-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.share-row .nav {
+  font-family: var(--ui); font-weight: 600; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 4px;
+  color: var(--bone); border: 1px solid rgba(239, 228, 210, 0.28);
+}
+.share-row .nav:focus, .share-row .nav:hover { border-color: var(--ember); background: rgba(255, 122, 42, 0.1); }
+.share-row .share-fb { background: #1877f2; border-color: #1877f2; color: #fff; }
+.share-row .share-fb:focus, .share-row .share-fb:hover { background: #3b8cf5; border-color: #fff; }
+.fb-ico { width: 18px; height: 18px; flex: none; }
+.share-msg { color: var(--ash); font-size: 15px; word-break: break-all; }
+.share-msg:empty { display: none; }
 .keys-legend { font-size: 15px; color: var(--ash); margin-top: 16px; line-height: 1.7; }
 
 .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 22px; }

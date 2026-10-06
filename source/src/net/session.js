@@ -206,9 +206,8 @@ export class NetSession {
         if (member || this.pending.has(id)) return;
         if (msg.v !== PROTOCOL) { this.reject(id, 'That room runs a different version of the game. Both players need the same file.'); return; }
         const tourney = this.kind === 'tournament';
-        if (!tourney && this.lobby.members.length >= MAX_PLAYERS) { this.reject(id, 'That battle is full (8 players).'); return; }
-        if (tourney && this.lobby.members.length >= MAX_TOURNAMENT) { this.reject(id, `That tournament is full (${MAX_TOURNAMENT} people).`); return; }
-        if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) { this.reject(id, 'That battle already started.'); return; }
+        const closed = this.closedReason();
+        if (closed) { this.reject(id, closed); return; }
         // in a tournament your fundraising group is your team; without one you can only watch.
         // When the admin requires fundraiser codes, fighters must bring one: it names their group.
         // Online battles (rooms and the queue) are for enrolled groups only: the site checks the code.
@@ -219,6 +218,9 @@ export class NetSession {
           this.pending.add(id);
           check.then((reg) => {
             if (!this.pending.delete(id) || !this.lobby || this.lobby.members.some((m) => m.id === id)) return;
+            // others may have filled the room, or the queue started, while the site was checking
+            const full = this.closedReason();
+            if (full) { this.reject(id, full); return; }
             if (reg.name) { this.admit(id, msg, cleanGroup(reg.name)); return; }
             this.reject(id, reg.why);
           });
@@ -249,6 +251,14 @@ export class NetSession {
         this.dropPeer(id, 'left');
         break;
     }
+  }
+
+  // Why nobody else can join right now, or null.
+  closedReason() {
+    if (this.kind === 'tournament') return this.lobby.members.length >= MAX_TOURNAMENT ? `That tournament is full (${MAX_TOURNAMENT} people).` : null;
+    if (this.lobby.members.length >= MAX_PLAYERS) return 'That battle is full (8 players).';
+    if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) return 'That battle already started.';
+    return null;
   }
 
   // Let a player or watcher into the lobby. `group` is their checked fundraising group (tournaments only).

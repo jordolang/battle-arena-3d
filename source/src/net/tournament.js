@@ -51,11 +51,15 @@ export function findFundraiser(groups, typed) {
 // Codes made in the José Madrid Salsa admin panel (website or desktop app) are checked by the site.
 // Resolves to the group's name, or null when the code is unknown or revoked; throws when the site
 // can't be reached. `?codes-api=` overrides the address for testing.
-export const CODES_API = new URLSearchParams(globalThis.location?.search || '').get('codes-api') || 'https://www.josemadrid.net/api/arena/game-codes/verify';
-const verified = new Map();
+// The override is honored only on a local test server, so a crafted link can't send players' codes elsewhere.
+const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(globalThis.location?.hostname || '');
+export const CODES_API = (LOCAL && new URLSearchParams(globalThis.location?.search || '').get('codes-api')) || 'https://www.josemadrid.net/api/arena/game-codes/verify';
+const VERIFIED_MS = 5 * 60 * 1000; // a revoked code stops working within five minutes
+const verified = new Map(); // code -> { name, at }
 export async function verifyFundraiserCode(typed) {
   const code = normFundraiserCode(typed);
-  if (verified.has(code)) return verified.get(code);
+  const hit = verified.get(code);
+  if (hit && performance.now() - hit.at < VERIFIED_MS) return hit.name;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6000);
   try {
@@ -63,7 +67,7 @@ export async function verifyFundraiserCode(typed) {
     if (!res.ok) throw new Error(`verify ${res.status}`);
     const data = await res.json();
     const name = data?.valid && typeof data.name === 'string' ? cleanGroup(data.name) || null : null;
-    if (name) verified.set(code, name); // only cache hits, so a code made a minute ago still works
+    if (name) verified.set(code, { name, at: performance.now() }); // only cache hits, so a code made a minute ago still works
     return name;
   } finally { clearTimeout(timer); }
 }

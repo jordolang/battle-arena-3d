@@ -82,7 +82,8 @@ function boot() {
   document.getElementById('boot').hidden = true;
   // an invite link (?room=CODE) opens the join screen with the code filled in
   const room = cleanCode(params.get('room'));
-  if (room) { menus.show('online'); document.getElementById('net-code').value = room; }
+  // (players without a fundraising group stay on the title until they enter one; the code waits in the join field)
+  if (room) { document.getElementById('net-code').value = room; if (menus.requireGroup()) menus.show('online'); }
 
   // when embedded in a frame the page needs a click before it hears keys
   const note = document.getElementById('focus-note');

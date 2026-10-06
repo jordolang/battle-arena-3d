@@ -4,6 +4,7 @@ import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BIND
 import { saveBindings } from './input.js';
 
 const SETUP_KEY = 'battle-arena.setup.v1';
+const GROUP_KEY = 'battle-arena.fundraiser-group.v1';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 // "Mage · Hellfire Orb · Meteor · Flame Lance · Ember Spray"
@@ -66,6 +67,16 @@ export class Menus {
       saveSetup(this.setup);
       this.updateTeamLabels();
     });
+    // players must belong to a fundraising group: the name or code is asked for on the title screen
+    // and kept in this browser; nothing checks it against the fundraiser system yet
+    this.groupEl = document.getElementById('fr-group');
+    this.groupErr = this.screens.title.querySelector('.fr-error');
+    try { this.groupEl.value = localStorage.getItem(GROUP_KEY) || ''; } catch { /* ignore */ }
+    this.groupEl.addEventListener('input', () => {
+      this.groupErr.textContent = '';
+      this.groupEl.classList.remove('bad');
+      try { localStorage.setItem(GROUP_KEY, this.groupEl.value.trim()); } catch { /* ignore */ }
+    });
     keyboard.onKey((e) => this.onKey(e));
     document.addEventListener('click', (e) => {
       if (e.detail === 0) return; // keyboard-generated click; onKey already handled it
@@ -86,7 +97,8 @@ export class Menus {
     if (name === 'setup') this.renderSetup();
     if (name === 'controls') this.renderControls();
     this.cb.onShow?.(name);
-    const first = this.screens[name].querySelector('.nav');
+    // on the title, start on Fight once a fundraising group is filled in, otherwise on the group field
+    const first = name === 'title' && this.group ? this.screens.title.querySelector('.menu-list .nav') : this.screens[name].querySelector('.nav');
     first?.focus({ preventScroll: true });
   }
 
@@ -107,7 +119,10 @@ export class Menus {
     if (cur && cur.tagName === 'INPUT') {
       if (k === 'Enter' || k === 'NumpadEnter') {
         if (cur.dataset.act) this.activate(cur);
-        else { const next = spatialNext(cur, items, 'down'); next?.focus(); }
+        else {
+          const next = cur.dataset.next ? this.screens[this.active].querySelector(cur.dataset.next) : spatialNext(cur, items, 'down');
+          next?.focus();
+        }
         return true;
       }
       if (k === 'Escape') { cur.blur(); const back = this.screens[this.active].dataset.back; if (back) this.runAct(back); return true; }
@@ -139,7 +154,21 @@ export class Menus {
     if (el.dataset.act) this.runAct(el.dataset.act, el);
   }
 
+  get group() { return this.groupEl.value.trim(); }
+
+  // true when a fundraising group has been entered; otherwise sends the player back to the field on the title
+  requireGroup() {
+    if (this.group) return true;
+    if (this.active !== 'title') this.show('title');
+    this.groupErr.textContent = 'Enter your fundraising group to join the fight.';
+    this.groupEl.classList.add('bad');
+    this.groupEl.focus();
+    return false;
+  }
+
   runAct(act, el) {
+    const gated = act === 'net-host' || act === 'net-join' || ((act === 'to-setup' || act === 'to-online') && this.active === 'title');
+    if (gated && !this.requireGroup()) return;
     switch (act) {
       case 'to-setup': this.show('setup'); break;
       case 'to-title': this.show('title'); break;

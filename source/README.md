@@ -11,6 +11,13 @@ Play free-for-all or in 2 to 4 named teams. Every fighter has stamina, three cas
 - Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`,
   then copy `dist/battle-arena.html` to the repo root as `index.html`.
 
+## José Madrid Salsa fundraiser
+- The title screen shows the José Madrid Salsa Battle Arena logo (`assets/jose-madrid-battle-arena-logo.webp`,
+  a revamp of the official José Madrid Salsa badge; the build inlines it into the single file).
+- Players must be enrolled in a José Madrid Salsa fundraising group. The title screen asks for the group's name or
+  code, and Fight / Fight online stay locked until it is filled in. The value is remembered in the browser only;
+  it is not yet checked against the fundraiser system.
+
 ## Online play (2 to 8 browsers)
 - Open `index.html` from the repo root (or a hosted copy of it) in each player's browser and choose **Fight online**.
 - One person picks **Host a room** and shares the 5-character code. Everyone else types it under **Join**.

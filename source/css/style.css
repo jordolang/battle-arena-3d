@@ -135,6 +135,24 @@ kbd {
 
 #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 #flash.on { animation: flash 0.35s ease-out; }
+
+/* instant replay of the final knockout: letterbox bars and a badge over the scene */
+#replay-badge { display: none; }
+body.replaying #hud { display: none; }
+body.replaying #app::before, body.replaying #app::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 7%; background: rgba(0, 0, 0, 0.85); pointer-events: none; z-index: 2;
+}
+body.replaying #app::before { top: 0; }
+body.replaying #app::after { bottom: 0; }
+body.replaying #replay-badge {
+  display: flex; align-items: center; gap: 12px; position: absolute; top: calc(7% + 14px); left: 16px; z-index: 3;
+  pointer-events: none; font-family: var(--ui); color: var(--bone); letter-spacing: 0.05em;
+}
+#replay-badge b { background: var(--blood); color: #fff; padding: 3px 12px; text-transform: uppercase; font-size: 20px; animation: rec 1.2s steps(2) infinite; }
+#replay-badge span { font-size: 19px; text-shadow: 0 1px 3px #000; }
+#replay-badge em { font-style: normal; color: var(--ash); font-size: 15px; text-shadow: 0 1px 3px #000; }
+@keyframes rec { 50% { opacity: 0.75; } }
+@media (max-width: 560px) { #replay-badge em { display: none; } }
 @keyframes flash { from { opacity: 0.55; } to { opacity: 0; } }
 
 /* ---------- Menus ---------- */

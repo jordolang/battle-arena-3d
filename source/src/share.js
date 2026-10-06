@@ -56,3 +56,34 @@ export async function shareAnywhere(opts) {
   }
   try { await navigator.clipboard.writeText(`${text} ${url}`); return 'Link copied. Paste it anywhere to share.'; } catch { return url; }
 }
+
+// The knockout clip (see replay.js) as a file: video { blob, type, url, name }.
+export function saveClip(video) {
+  const a = document.createElement('a');
+  a.href = video.url;
+  a.download = video.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// Phones share the video itself (Facebook, Messenger, texts...). Elsewhere a site can't attach a video to a
+// Facebook post, so the clip is saved for the player to add and the share dialog opens with the match link.
+// Runs straight from the click, like shareOnFacebook. Resolves to a short message for the screen.
+export async function shareClip(video, opts) {
+  const file = typeof File === 'function' ? new File([video.blob], video.name, { type: video.type }) : null;
+  if (file && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'José Madrid Salsa Battle Arena', text: `${shareText(opts)} ${shareLink(opts)} ${HASHTAG}` });
+      return '';
+    } catch (err) {
+      if (err?.name === 'AbortError') return '';
+      // past the await the click no longer counts, so a popup would be blocked: just save the file
+      saveClip(video);
+      return 'Clip saved to your downloads. Post it from the Facebook app or site.';
+    }
+  }
+  saveClip(video);
+  shareOnFacebook(opts);
+  return 'Clip saved to your downloads. Add it to the Facebook post with the photo/video button.';
+}

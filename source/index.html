@@ -37,6 +37,7 @@
     <div id="hint"></div>
   </div>
   <div id="flash"></div>
+  <div id="replay-badge" aria-live="polite"><b>Replay</b><span>The final knockout</span><em>Press Enter or tap to skip</em></div>
 
   <section class="screen" id="screen-title" hidden>
     <div class="title-wrap">
@@ -434,6 +435,9 @@
       <div class="share-row">
         <button class="nav share-fb" data-act="share-fb"><svg class="fb-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>Share this win</button>
         <button class="nav" data-act="share-link">Send to a friend</button>
+        <button class="nav" data-act="replay-watch" hidden>Watch the knockout</button>
+        <button class="nav" data-act="clip-share" hidden>Share the KO clip</button>
+        <button class="nav" data-act="clip-save" hidden>Save clip</button>
         <button class="nav fr-donate" data-act="donate">Donate to your team</button>
         <span class="share-msg" role="status"></span>
       </div>

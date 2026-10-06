@@ -1,5 +1,5 @@
 // Keyboard-first menus: title, fight setup, controls/rebinding, pause, results.
-import { shareOnFacebook, shareAnywhere } from './share.js';
+import { shareOnFacebook, shareAnywhere, shareClip, saveClip } from './share.js';
 import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BINDINGS, SPECIALS, SKILLS, keyLabel,
   TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
 import { saveBindings, devices } from './input.js';
@@ -304,21 +304,32 @@ export class Menus {
       case 'reset-pad': this.pads?.resetMap(); this.renderControls(); this.focusAct('reset-pad'); break;
       case 'donate': this.donate(); break;
       case 'share-fb': shareOnFacebook(this.shareContext()); break;
-      case 'share-link': {
-        const msg = this.screens[this.active]?.querySelector('.share-msg');
-        shareAnywhere(this.shareContext()).then((text) => {
-          if (!msg) return;
-          msg.textContent = text;
-          clearTimeout(this.shareMsgTimer);
-          this.shareMsgTimer = setTimeout(() => { msg.textContent = ''; }, 4000);
-        });
-        break;
-      }
+      case 'share-link': shareAnywhere(this.shareContext()).then((text) => this.shareMsg(text)); break;
+      // the knockout replay and its video clip (main.js sets this.replay)
+      case 'replay-watch': this.replay?.watch(); break;
+      case 'clip-share': if (this.replay?.video) shareClip(this.replay.video, this.shareContext()).then((text) => this.shareMsg(text, 7000)); break;
+      case 'clip-save': if (this.replay?.video) { saveClip(this.replay.video); this.shareMsg('Clip saved to your downloads.'); } break;
       case 'reset-keys':
         DEFAULT_BINDINGS.forEach((b, i) => Object.assign(this.bindings[i], b));
         saveBindings(this.bindings); this.renderControls(); this.focusAct('reset-keys'); break;
       default: this.cb.onAct?.(act, el);
     }
+  }
+
+  shareMsg(text, ms = 4000) {
+    const msg = this.screens[this.active]?.querySelector('.share-msg');
+    if (!msg) return;
+    msg.textContent = text;
+    clearTimeout(this.shareMsgTimer);
+    this.shareMsgTimer = setTimeout(() => { msg.textContent = ''; }, ms);
+  }
+
+  // The replay buttons show once there is a knockout to watch or a clip to share.
+  updateReplayButtons() {
+    const el = this.screens.results;
+    el.querySelector('[data-act="replay-watch"]').hidden = !this.replay?.canPlay;
+    el.querySelector('[data-act="clip-share"]').hidden = !this.replay?.video;
+    el.querySelector('[data-act="clip-save"]').hidden = !this.replay?.video;
   }
 
   // What a share button posts: the last match from the results screen, plus the online room to join
@@ -604,6 +615,7 @@ export class Menus {
     el.querySelector('tbody').innerHTML = sorted.map((f) => `<tr>
       <td><i class="sw" style="background:${hex(f.def.eyes)}"></i>${esc(f.name)}</td>
       <td>${esc(f.label)}</td>${teamed ? `<td style="color:${hex(f.teamColor ?? 0xffffff)}">${esc(f.teamName)}</td>` : ''}<td>${f.stats.wins}</td><td>${f.stats.kos}</td><td>${Math.round(f.stats.damage)}</td></tr>`).join('');
+    this.updateReplayButtons();
     this.show('results');
   }
 

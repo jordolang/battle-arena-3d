@@ -258,6 +258,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
+- `replay.js` instant replay of the final knockout and its shareable video clip (`share.js` posts it)
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 
 ## Extension points for later passes
@@ -267,6 +268,12 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   Sound effects volumes live in the fight setup. `window.__arena.audio.stats` shows what loaded and played.
 - **Online multiplayer:** built (see above). Every fighter is driven by a controller with `getIntent(fighter, world)`;
   remote players use `NetController` on the host. Online clients receive `events` too, with fighters resolved locally.
+- **Replays:** built. While a match runs, `replay.js` keeps the last 14 seconds of poses, projectiles, effects and
+  sound events (sampled 30 times a second). At match end it freezes the seconds around the deciding KO, plays them back
+  with a cinematic camera and slow motion before the results, and records that playback (plus a title card) into an
+  MP4 or WebM clip with `MediaRecorder`. Only the playback is encoded, so normal play pays almost nothing. The results
+  screen offers Watch the knockout, Share the KO clip (the phone share sheet, or save plus the Facebook dialog on a
+  computer) and Save clip. `window.__arena.game.replay.stats()` shows the buffer and clip.
 - Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match, `&mode=tournament&teams=2` on the Badlands.
 
 Three.js r180 and PeerJS 1.5.5 are vendored in `vendor/` (both MIT, see `vendor/three-LICENSE` and `vendor/peerjs-LICENSE`).

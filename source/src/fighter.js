@@ -481,6 +481,7 @@ export class Fighter {
   }
 
   checkHits(world) {
+    if (world.predict) return; // an online guest's look-ahead copy: only the host lands blows
     const m = this.move;
     const power = this.dmgMult();
     // a weapon in hand turns punches into slashes, chops or crushing blows

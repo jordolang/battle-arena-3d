@@ -235,6 +235,7 @@ export class NetController {
     if (msg.s <= this.seq) return;
     this.seq = msg.s;
     this.heardAt = now;
+    this.from = null;
     const len = Math.hypot(msg.mx, msg.mz);
     const k = len > 1 ? 1 / len : 1;
     this.mx = (+msg.mx || 0) * k; this.mz = (+msg.mz || 0) * k;
@@ -244,7 +245,9 @@ export class NetController {
     if (!this.seen) this.seen = msg.c.slice();
     this.counts = msg.c.slice();
   }
-  getIntent() {
+  getIntent(fighter, world) {
+    // the simulation time this input was first applied, so the player's own prediction can line up with us
+    if (this.from == null && world) this.from = world.time;
     // a player whose input stops arriving stands still instead of running forever
     const stale = performance.now() - this.heardAt > 600;
     const it = { mx: stale ? 0 : this.mx, mz: stale ? 0 : this.mz, block: !stale && this.block, dashHeld: !stale && this.dashHeld };

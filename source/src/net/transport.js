@@ -7,7 +7,8 @@
 //   rt   unordered: snapshots and inputs, where a late packet is worth less than a fresh one
 //
 // `?net=local` swaps in a BroadcastChannel transport so two tabs of one browser
-// can play each other without any network (handy for testing).
+// can play each other without any network (handy for testing); add `&lag=150`
+// to hold every message for 75 ms each way, like a 150 ms round trip.
 // `?peerserver=host:port` points at your own PeerJS server instead of the public one.
 
 const ID_PREFIX = 'battle-arena-v1-';
@@ -205,6 +206,41 @@ class PeerTransport extends BaseTransport {
     });
   }
 
+  // After the host left: connect this same peer (so the room still knows us by our id) to the
+  // room's new host. Resolves once both channels are open; rejects with kind 'noroom' or 'timeout'.
+  rejoin(code, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+      const peer = this.peer;
+      if (!peer || peer.destroyed) { reject(new TransportError('failed', 'Not connected.')); return; }
+      if (peer.disconnected) try { peer.reconnect(); } catch { /* try the connection anyway */ }
+      for (const [id, link] of this.links) { this.links.delete(id); for (const c of CHANNELS) try { link[c]?.close(); } catch { /* gone */ } }
+      const hostId = ID_PREFIX + code;
+      this.hostId = hostId;
+      let done = false;
+      const finish = (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        peer.off?.('error', onError);
+        if (!err) { resolve(); return; }
+        const link = this.links.get(hostId);
+        this.links.delete(hostId);
+        if (link) for (const c of CHANNELS) try { link[c]?.close(); } catch { /* gone */ }
+        reject(err);
+      };
+      const onError = (err) => { if (err.type === 'peer-unavailable' && String(err.message).includes(hostId)) finish(new TransportError('noroom', 'Nobody is hosting yet.')); };
+      peer.on('error', onError);
+      const timer = setTimeout(() => finish(new TransportError('timeout', 'The new host did not answer.')), timeout);
+      const ctl = peer.connect(hostId, { label: 'ctl', reliable: true, serialization: 'json' });
+      const rt = peer.connect(hostId, { label: 'rt', reliable: false, serialization: 'json' });
+      this.adopt(ctl, true);
+      this.adopt(rt, true);
+      const check = () => { const l = this.links.get(hostId); if (l?.ctl?.open && l?.rt?.open) finish(); };
+      ctl.on('open', check);
+      rt.on('open', check);
+    });
+  }
+
   adopt(conn, toHost) {
     const id = conn.peer;
     if (!this.links.has(id)) this.links.set(id, {});
@@ -263,7 +299,8 @@ class LocalTransport extends BaseTransport {
   }
   open(code) {
     this.bc = new BroadcastChannel('battle-arena-room-' + code);
-    this.bc.onmessage = (e) => this.receive(e.data);
+    const lag = +new URLSearchParams(location.search).get('lag') || 0;
+    this.bc.onmessage = lag ? (e) => setTimeout(() => this.receive(e.data), lag / 2) : (e) => this.receive(e.data);
   }
   post(to, kind, msg, ch) { this.bc?.postMessage({ from: this.id, to, kind, msg, ch }); }
   host(code) {
@@ -285,6 +322,17 @@ class LocalTransport extends BaseTransport {
       this.open(code);
       this.joined = () => { clearTimeout(timer); resolve(); };
       const timer = setTimeout(() => { this.joined = null; this.bc.close(); reject(new TransportError('noroom', `No open room has the code ${code}.`)); }, 1500);
+      this.post('*', 'hi');
+    });
+  }
+  rejoin(code, timeout = 1500) {
+    try { this.bc?.close(); } catch { /* already closed */ }
+    this.hostId = null;
+    return new Promise((resolve, reject) => {
+      this.open(code);
+      const bc = this.bc;
+      this.joined = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(() => { this.joined = null; if (this.bc === bc) { bc.close(); this.bc = null; } reject(new TransportError('noroom', 'Nobody is hosting yet.')); }, Math.min(timeout, 1500));
       this.post('*', 'hi');
     });
   }

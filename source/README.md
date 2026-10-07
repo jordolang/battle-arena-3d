@@ -116,11 +116,23 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   It cannot run inside the Claude Artifact preview, which blocks WebRTC: use the standalone file or a hosted copy.
 - Very strict networks (some offices) can block direct connections; PeerJS's public relay servers are tried as a fallback.
 
+- **If the host leaves** (closes the tab, loses their connection or leaves mid-match), the battle carries on: the next
+  player in the room takes over hosting from the last snapshot, everyone else reconnects to them within a few seconds, and
+  a CPU takes the old host's fighter. The room code gains `-1` (then `-2`…). A host who closes their room from the
+  lobby still closes it for everyone, and tournaments stay with their admin.
+
 How it works (`src/net/`): the host runs the only simulation. Remote players send input (movement plus running tap counters,
 so a lost packet never drops a punch) and draw the match from 30 Hz snapshots, 100 ms behind the host for smooth interpolation.
+Your own fighter is the exception (`predict.js`): while it is free to act (moving, blocking, punching, kicking, jumping,
+dodging) your browser runs it ahead from your keys, so it answers at once instead of a round trip plus 100 ms later. Each
+snapshot says which of your inputs the host has applied and for how long; the guest compares the host's fighter with
+where it had it at that point and eases away any difference. Hits, damage, skills, specials and gear stay with the host,
+and when you are hit or knocked down your fighter is drawn from snapshots like everyone else's. `?predict=0` turns it off.
+Every 15th snapshot also carries the timers (buffs, shields, guard) a guest would need to take over hosting.
 Effects, announcer lines, the kill feed and every gameplay event are replayed on clients at the matching moment, so
 `events` listeners (the audio pass) fire on every machine. `transport.js` wraps PeerJS; add `?net=local` to test with
-several tabs of one browser and no network, or `?peerserver=host:port` to use your own PeerJS server.
+several tabs of one browser and no network (`&lag=150` adds a 150 ms round trip), or `?peerserver=host:port` to use
+your own PeerJS server.
 
 ## Controls (rebindable in the Controls screen, saved in the browser)
 | | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 |

@@ -875,3 +875,59 @@ body.touch-fight .coach-btn { min-height: 34px; }
 body.touch-fight .coach-btn kbd { display: none; }
 @media (max-height: 500px) { body.touch-fight .coach-text { font-size: 12px; line-height: 1.25; } body.touch-fight .coach-head .coach-n { display: none; } }
 @media (orientation: portrait) and (max-width: 700px) { body.touch-fight #coach { top: 31%; width: calc(100% - 20px); } }
+
+/* ---------- season pass, fighter levels and challenges (progression-ui.js) ---------- */
+.cs-card { position: relative; }
+.cs-lv { position: absolute; top: 4px; right: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--ash); }
+.xp-bar { position: relative; height: 6px; border-radius: 3px; background: rgba(239, 228, 210, 0.14); overflow: hidden; }
+.xp-bar.big { height: 10px; border-radius: 5px; }
+.xp-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--ember), var(--gold)); }
+.pass-tier { margin: 4px 0 12px; }
+.pass-tier-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.pass-tier-head b { font-family: var(--display); font-size: 28px; font-weight: 500; color: var(--gold); }
+.pass-tier-head span { color: var(--ash); }
+.pass-tier-head em { margin-left: auto; font-style: normal; color: var(--ash); font-size: 14px; }
+.pass-track { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-bottom: 18px; }
+.tier { --rc: #888; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.08); border-left: 3px solid var(--rc); background: rgba(0, 0, 0, 0.25); font-size: 13px; opacity: 0.72; }
+.tier.got { opacity: 1; background: color-mix(in srgb, var(--rc) 12%, rgba(0, 0, 0, 0.25)); }
+.tier.next { opacity: 1; border-color: var(--gold); border-left-color: var(--rc); }
+.tier-n { grid-row: span 2; font-family: var(--display); font-size: 22px; color: var(--bone); min-width: 22px; text-align: center; }
+.tier-r span, .gt-r span { color: var(--ash); }
+.tier-xp { color: var(--ash); font-size: 12px; }
+.tier.got .tier-xp { color: var(--gold); }
+.pass-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px 32px; margin-bottom: 16px; }
+.pass-grid .col-h { margin-top: 12px; }
+.pass-grid .col-h:first-child { margin-top: 0; }
+.pass-reset { color: var(--ash); letter-spacing: 0.08em; text-transform: none; }
+.ch { margin-bottom: 8px; }
+.ch-head { display: flex; gap: 10px; justify-content: space-between; font-size: 15px; margin-bottom: 3px; }
+.ch-head em { font-style: normal; color: var(--ash); white-space: nowrap; font-size: 13px; }
+.ch.done .ch-head span { color: var(--ash); text-decoration: line-through; }
+.ch.done .ch-head em { color: var(--gold); }
+.gt-team { margin: 0 0 6px; }
+.gt-team b { color: var(--gold); margin-right: 6px; }
+.gt-note { color: var(--ash); font-size: 14px; margin: 8px 0; }
+.gt-list { display: grid; gap: 5px; margin-bottom: 10px; }
+.gt { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; padding: 5px 8px; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; opacity: 0.72; }
+.gt.got, .gt.reached { opacity: 1; border-color: var(--gold); }
+.gt-at { font-weight: 700; color: var(--ember); }
+.gt-b { color: var(--ash); font-size: 12px; }
+.gt.got .gt-b { color: var(--gold); }
+.pass-fighters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.fl { --fc: #fff; padding: 6px 8px; border-top: 2px solid var(--fc); background: rgba(0, 0, 0, 0.25); }
+.fl-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.fl-lv { color: var(--gold); font-weight: 700; }
+.fl-m { margin-left: auto; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.fl-xp { color: var(--ash); font-size: 12px; margin-top: 3px; }
+.prog-result { margin: 0 0 14px; padding: 10px 14px; border-left: 3px solid var(--ember); background: rgba(255, 122, 42, 0.07); }
+.pr-row { display: grid; grid-template-columns: minmax(80px, auto) 56px minmax(80px, 1fr) auto; gap: 10px; align-items: center; font-size: 15px; margin: 4px 0; }
+.pr-k { color: var(--bone); font-weight: 600; }
+.pr-lv { color: var(--gold); font-weight: 700; }
+.pr-v { color: var(--ash); font-size: 13px; white-space: nowrap; }
+.pr-extras { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 14px; color: var(--ash); }
+.pr-extras b { color: var(--bone); }
+@media (max-width: 720px) {
+  .pass-grid { grid-template-columns: minmax(0, 1fr); }
+  .pr-row { grid-template-columns: auto 48px minmax(60px, 1fr); }
+  .pr-v { grid-column: 1 / -1; }
+}

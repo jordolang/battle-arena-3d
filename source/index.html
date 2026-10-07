@@ -80,6 +80,7 @@
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
         <button class="nav big" data-act="to-locker">Locker room <small>fighters &amp; outfits</small></button>
+        <button class="nav big" data-act="to-pass">Season pass <small class="pass-hint">levels and challenges</small></button>
         <button class="nav big" data-act="to-boards">Leaderboards <small>players and groups</small></button>
         <button class="nav big" data-act="to-training">Training <small>tutorial and practice room</small></button>
         <button class="nav big" data-act="to-controls">Controls &amp; moves</button>
@@ -344,6 +345,35 @@
     </div>
   </section>
 
+  <section class="screen" id="screen-pass" data-back="pass-back" hidden>
+    <div class="plate wide">
+      <div class="eyebrow">Fundraiser season</div>
+      <h2 class="pass-name">Season pass</h2>
+      <p class="pass-sub sub"></p>
+      <div class="pass-tier"></div>
+      <div class="pass-track"></div>
+      <div class="pass-grid">
+        <div>
+          <div class="col-h">Daily challenges <span class="pass-reset" data-kind="daily"></span></div>
+          <div class="pass-ch" data-kind="daily"></div>
+          <div class="col-h">Weekly challenges <span class="pass-reset" data-kind="weekly"></span></div>
+          <div class="pass-ch" data-kind="weekly"></div>
+        </div>
+        <div>
+          <div class="col-h">Your group's goal</div>
+          <div class="pass-group"></div>
+        </div>
+      </div>
+      <div class="col-h">Fighter levels</div>
+      <div class="pass-fighters"></div>
+      <div class="actions">
+        <button class="nav big primary" data-act="to-setup">Fight</button>
+        <button class="nav big" data-act="to-locker">Locker room</button>
+        <button class="nav big" data-act="pass-back">Back</button>
+      </div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-profile" data-back="to-title" hidden>
     <div class="plate wide">
       <div class="eyebrow">Your fighter</div>
@@ -420,6 +450,7 @@
       <div class="champ"></div>
       <p class="champ-sub"></p>
       <div class="unlocks" hidden></div>
+      <div class="prog-result" hidden></div>
       <div class="table-wrap">
         <table class="results-table">
           <thead><tr><th>Fighter</th><th>Played by</th><th>Rounds</th><th>KOs</th><th>Damage</th></tr></thead>

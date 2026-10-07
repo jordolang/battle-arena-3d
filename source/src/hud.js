@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { ENERGY_MAX, SPECIAL_COST, PLAYER_COLORS, SPECIALS, SKILLS, STAMINA_MAX, COMBAT, WEAPONS, POWERUPS, BELT_SIZE, ARMOR_POINTS, keyLabel } from './config.js';
 import { itemIcon } from './items.js';
+import { SAY_MS } from './social.js';
 
 // The four move keys, or one "LS" when they are a controller's left stick.
 function moveKeys(b, k) {
@@ -216,13 +217,13 @@ export class Hud {
 
   static controlHint(index, b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[a]))}</kbd>`;
-    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${moveKeys(b, k)} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special${b.use ? ` · ${k('use')} gun or spell` : ''}${b.cycle ? ` · ${k('cycle')} next slot` : ''}`;
+    return `<b style="color:${PLAYER_COLORS[index]}">P${index + 1}</b> ${moveKeys(b, k)} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special${b.use ? ` · ${k('use')} gun or spell` : ''}${b.cycle ? ` · ${k('cycle')} next slot` : ''}${b.taunt ? ` · ${k('taunt')} taunt` : ''}${b.comms ? ` · ${k('comms')} emotes` : ''}`;
   }
 
   static onlineHint(b) {
     const k = (a) => `<kbd>${esc(keyLabel(b[0][a]))}</kbd>`;
     const pad = String(b[0].punch).startsWith('Pad:');
-    return `<b>You</b> ${moveKeys(b[0], k)}${pad ? '' : ' or arrows'} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special · ${k('use')} or ${k('slot1')}${pad ? '' : '-'}${k(pad ? 'slot2' : 'slot4')}${pad ? `${k('slot3')}${k('slot4')}` : ''} gun or spell · ${k('cycle')} next slot`;
+    return `<b>You</b> ${moveKeys(b[0], k)}${pad ? '' : ' or arrows'} move · ${k('punch')} punch · ${k('kick')} kick · ${k('block')} block · ${k('jump')} jump · ${k('dash')} dodge, hold to sprint · ${k('skill1')}${k('skill2')}${k('skill3')} skills · ${k('special')} special · ${k('use')} or ${k('slot1')}${pad ? '' : '-'}${k(pad ? 'slot2' : 'slot4')}${pad ? `${k('slot3')}${k('slot4')}` : ''} gun or spell · ${k('cycle')} next slot · ${k('taunt')} taunt · ${k('comms')} emotes and quick chat`;
   }
 
   // "P1 Ember (Mage): = Meteor · - Flame Lance · 0 Ember Spray · I Hellfire Orb"
@@ -257,6 +258,20 @@ export class Hud {
   setTimer(text, urgent) {
     this.timerEl.textContent = text;
     this.timerEl.classList.toggle('urgent', !!urgent);
+  }
+
+  // A speech bubble over a fighter's head: quick chat and taunts (social.js). `kind` styles it.
+  say(f, text, kind = '') {
+    const it = this.items.find((x) => x.f === f);
+    if (!it) return;
+    it.say?.remove();
+    const el = document.createElement('div');
+    el.className = `say ${kind}`;
+    el.textContent = text;
+    it.tag.appendChild(el);
+    it.say = el;
+    clearTimeout(it.sayTimer);
+    it.sayTimer = setTimeout(() => { el.remove(); if (it.say === el) it.say = null; }, SAY_MS);
   }
 
   update(dt, camera, width, height) {

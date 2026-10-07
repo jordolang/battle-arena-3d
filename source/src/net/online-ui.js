@@ -312,8 +312,8 @@ export class OnlineMenus {
       : `${humans} ${humans === 1 ? 'player' : 'players'} in the room${count > humans ? `, ${count - humans} CPU` : ''}. Up to ${MAX_PLAYERS} people can join.`;
     el.querySelector('.net-actions').dataset.mode = '';
     el.querySelector('.net-actions').innerHTML = s.isHost
-      ? '<button class="nav big primary" data-act="net-start">Begin the fight</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Close room</button>'
-      : '<span class="waiting">Waiting for the host…</span><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave room</button>';
+      ? '<button class="nav big primary" data-act="net-start">Begin the fight</button><button class="nav big" data-act="to-friends">Invite friends</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Close room</button>'
+      : '<span class="waiting">Waiting for the host…</span><button class="nav big" data-act="to-friends">Invite friends</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave room</button>';
 
     if (focusKey) {
       const again = [...el.querySelectorAll('.nav')].find((x) => `${x.dataset.opt || ''}|${x.dataset.act || ''}` === focusKey);

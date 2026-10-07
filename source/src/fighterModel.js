@@ -571,6 +571,32 @@ export function victoryPose(t, kind = 'fist') {
   }
 }
 
+// Emotes (social.js): a wave and a laugh of their own, the rest borrowed from the victory poses.
+export function emotePose(id, t) {
+  switch (id) {
+    case 'wave': {
+      // right hand high, waving side to side, weight on one hip
+      const w = Math.sin(t * 9);
+      return {
+        shR: [-2.55, 0, -0.45 - 0.32 * w], elR: [-0.55 + 0.25 * w, 0, 0], shL: [-0.15, 0, 0.3], elL: [-0.5, 0, 0],
+        chest: [-0.04, -0.15, 0.04 * w], spine: [0, -0.08, 0], head: [-0.1, -0.15, -0.08],
+        hips: [0, 0, 0.06], hipL: [0, 0, 0.14], hipR: [0, 0, -0.1], knL: [0.18, 0, 0], knR: [0.04, 0, 0], lift: -0.02,
+      };
+    }
+    case 'laugh': {
+      // head thrown back, shoulders shaking, hands on the belly
+      const b = Math.abs(Math.sin(t * 13));
+      return {
+        spine: [-0.18 - 0.06 * b, 0, 0], chest: [-0.12 - 0.05 * b, 0, 0], head: [-0.45 - 0.08 * b, 0, 0],
+        shL: [-0.55, 0, 0.32], elL: [-1.85, 0, 0], shR: [-0.55, 0, -0.32], elR: [-1.85, 0, 0],
+        hipL: [0, 0, 0.1], hipR: [0, 0, -0.1], knL: [0.12, 0, 0], knR: [0.12, 0, 0], lift: -0.03 + 0.03 * b,
+      };
+    }
+    case 'taunt': return victoryPose(t, 'beckon');
+    default: return victoryPose(t, id);
+  }
+}
+
 // ---- Motion capture ----------------------------------------------------
 // Clips are decoded once into floats: per frame, 12 joint quaternions (JOINTS order) then the hip lift.
 const STRIDE = JOINTS.length * 4 + 1;
@@ -666,6 +692,7 @@ export function computePose(f) {
     case 'knockdown': case 'ko': case 'getup': return fromEuler(out, downPose);
     case 'frozen': return fromEuler(out, frozenPose);
     case 'victory': return fromEuler(out, victoryPose(t, m.victory));
+    case 'emote': return fromEuler(out, emotePose(f.emoteId, f.stateTime));
     default:
       if (!f.grounded) {
         // the jump clip runs from take-off to landing, following the fighter's actual rise and fall

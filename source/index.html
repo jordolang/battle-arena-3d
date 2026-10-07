@@ -58,6 +58,7 @@
           <div class="acct-stats"></div>
           <div class="acct-actions">
             <button class="nav" data-act="to-profile">My profile</button>
+            <button class="nav" data-act="to-friends">Friends <span class="fr-count"></span></button>
             <button class="nav" data-act="to-boards">Leaderboards</button>
           </div>
         </div>
@@ -230,7 +231,7 @@
     <div class="plate net-plate">
       <div class="eyebrow">Online · 2 to 8 browsers</div>
       <h2>Fight online</h2>
-      <p class="sub">Pick a queue: everyone who joins the same one within 30 seconds drops into one battle, with CPU fighters filling out small ones. Ranked 1v1 waits for a real opponent and counts toward your rating. Invite friends with the link in the queue.</p>
+      <p class="sub">Pick a queue: everyone who joins the same one within 30 seconds drops into one battle, with CPU fighters filling out small ones. Ranked 1v1 waits for a real opponent and counts toward your rating. Or open a private room that only the people you invite can join.</p>
       <div class="net-form">
         <label class="field" for="net-name"><span class="lbl">Your name</span><input id="net-name" class="nav" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Fighter"></label>
         <div class="net-choice">
@@ -245,6 +246,12 @@
             <div class="col-h">Invited?</div>
             <label class="field" for="net-code"><span class="lbl">Invite code</span><input id="net-code" class="nav code" data-act="net-join" maxlength="8" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
             <button class="nav big" data-act="net-join">Join friend</button>
+          </div>
+          <div class="net-card">
+            <div class="col-h">Private room</div>
+            <p>Pick the rules and invite your friends. Nobody else gets in.</p>
+            <button class="nav big" data-act="net-host">Host a private room</button>
+            <button class="nav big" data-act="to-friends">Friends <span class="fr-count"></span></button>
           </div>
         </div>
       </div>
@@ -419,6 +426,24 @@
         <button class="nav big" data-act="to-boards">Leaderboards</button>
         <button class="nav big" data-act="acct-signout">Sign out</button>
         <button class="nav big" data-act="to-title">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-friends" data-back="fr-back" hidden>
+    <div class="plate wide">
+      <div class="eyebrow">Your José Madrid Salsa account</div>
+      <h2>Friends</h2>
+      <p class="fr-room sub"></p>
+      <div class="fr-add">
+        <label class="field" for="fr-handle"><span class="lbl">Add a friend by their fighter name</span><input id="fr-handle" class="nav" data-act="fr-add" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Maria 1234"></label>
+        <button class="nav" data-act="fr-add">Send request</button>
+      </div>
+      <p class="fr-msg" role="status"></p>
+      <div class="fr-body"></div>
+      <div class="actions">
+        <button class="nav big" data-act="fr-host">Host a private room</button>
+        <button class="nav big" data-act="fr-back">Back</button>
       </div>
     </div>
   </section>

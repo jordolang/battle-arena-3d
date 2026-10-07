@@ -264,34 +264,38 @@ export const ROSTER = [
 ];
 
 export const ACTIONS = ['up', 'down', 'left', 'right', 'punch', 'kick', 'block', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3',
-  'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4'];
+  'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4', 'taunt', 'comms'];
+// Taunting and the emote menu: never fighting moves, so they may share keys the practice room uses.
+export const SOCIAL_ACTIONS = new Set(['taunt', 'comms']);
 export const ACTION_LABELS = {
   up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right',
   punch: 'Punch', kick: 'Kick', block: 'Block (hold)', special: 'Special', jump: 'Jump',
   dash: 'Dodge (tap) / sprint (hold)', skill1: 'Skill 1', skill2: 'Skill 2', skill3: 'Skill 3',
   use: 'Use gun / spell', cycle: 'Next bar slot', slot1: 'Bar slot 1', slot2: 'Bar slot 2', slot3: 'Bar slot 3', slot4: 'Bar slot 4',
+  taunt: 'Taunt', comms: 'Emotes and quick chat',
 };
 
 // KeyboardEvent.code values, so bindings work on any keyboard layout.
 // P1's left hand moves (WASD, Shift), the right hand fights (J K I H) and casts (= - 0).
 // The ability bar (guns and spell tomes picked up in the arena): P1 fires with E, Q picks the next slot, 1-4 fire a slot directly.
+// F taunts; C opens the emote and quick-chat menu, where 1-4 pick (social.js).
 export const DEFAULT_BINDINGS = [
   { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
     punch: 'KeyJ', kick: 'KeyK', block: 'KeyH', special: 'KeyI', jump: 'Space',
     dash: 'ShiftLeft', skill1: 'Equal', skill2: 'Minus', skill3: 'Digit0',
-    use: 'KeyE', cycle: 'KeyQ', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4' },
+    use: 'KeyE', cycle: 'KeyQ', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4', taunt: 'KeyF', comms: 'KeyC' },
   { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
     punch: 'Period', kick: 'Slash', block: 'Semicolon', special: 'Quote', jump: 'Enter',
     dash: 'ShiftRight', skill1: 'BracketRight', skill2: 'BracketLeft', skill3: 'Backslash',
-    use: 'Comma', cycle: 'Backspace', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'Comma', cycle: 'Backspace', slot1: '', slot2: '', slot3: '', slot4: '', taunt: 'End', comms: '' },
   { up: 'Numpad8', down: 'Numpad5', left: 'Numpad4', right: 'Numpad6',
     punch: 'Numpad1', kick: 'Numpad2', block: 'Numpad3', special: 'Numpad7', jump: 'Numpad0',
     dash: 'NumpadDecimal', skill1: 'Numpad9', skill2: 'NumpadAdd', skill3: 'NumpadSubtract',
-    use: 'NumpadEnter', cycle: 'NumpadMultiply', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'NumpadEnter', cycle: 'NumpadMultiply', slot1: '', slot2: '', slot3: '', slot4: '', taunt: 'NumpadDivide', comms: '' },
   { up: 'KeyY', down: 'KeyN', left: 'KeyB', right: 'KeyM',
     punch: 'KeyU', kick: 'KeyO', block: 'KeyL', special: 'Digit7', jump: 'Digit8',
     dash: 'KeyV', skill1: 'Digit6', skill2: 'Digit9', skill3: 'Digit5',
-    use: 'KeyG', cycle: 'KeyT', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'KeyG', cycle: 'KeyT', slot1: '', slot2: '', slot3: '', slot4: '', taunt: '', comms: '' },
 ];
 
 export const PLAYER_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d'];

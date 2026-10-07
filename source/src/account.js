@@ -137,6 +137,12 @@ export class Account {
   leaderboard(q) { return this.call(`/api/arena/leaderboard?${new URLSearchParams(q)}`, { auth: false }); }
   player(handle) { return this.call(`/api/arena/players/${encodeURIComponent(handle)}`, { auth: false }); }
 
+  // friends (friends.js): the check-in sends the private room you are in and returns the whole list
+  checkIn(room) { return this.call('/api/arena/friends/presence', { method: 'POST', body: { room: room || null } }); }
+  addFriend(handle) { return this.call('/api/arena/friends', { method: 'POST', body: { handle } }); }
+  removeFriend(handle) { return this.call(`/api/arena/friends/${encodeURIComponent(handle)}`, { method: 'DELETE' }); }
+  inviteFriend(handle, room) { return this.call('/api/arena/friends/invites', { method: 'POST', body: { handle, room } }); }
+
   // Reports matches to the website. A match opens when its first round starts and is closed
   // with this browser's own fighter's result when it ends. Watching, demos, training and guests record nothing.
   track({ events, game, session, onResult }) {

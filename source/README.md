@@ -105,6 +105,26 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   for the boss) plus knockouts, damage and health left; the best score is kept in this browser. Each stage is a normal
   local match, so it goes on your profile and counts toward locker unlocks.
 
+## Private rooms and friends
+- **Fight online → Host a private room** opens a room only people you invite can join: the host picks the rules,
+  teams and CPU count, and shares the room code, the `?room=CODE` link, or invites friends directly.
+- **Friends** (title screen when signed in, the Fight online screen, or **Invite friends** in a room lobby): add a
+  friend by their fighter name; once they accept you see who is online and who is in which private room. **Join**
+  takes you into a friend's room; **Invite** (while you are in a room) pops up a card on their screen with a Join
+  button. Invites last 10 minutes.
+- The friends list lives on the José Madrid Salsa site (`/api/arena/friends`, `/friends/presence`,
+  `/friends/invites`). While the game is open it checks in every 30 seconds and at once when you enter or leave a
+  private room (`friends.js`); room codes are only ever shown to accepted friends.
+
+## Emotes, taunts and quick chat (`social.js`)
+- **F** (R3 on a pad, the hand button on touch) taunts: a "come on then" that pays 12 special energy if nobody
+  punishes it (once every 6 seconds). CPUs sometimes show off after a knockout when nobody is near.
+- **C** (L3, the speech button on touch) opens a small menu; press it again for the next page. **1-4** (the D-pad, or a
+  tap) pick: Wave, Flex, Salsa and Laugh, then two pages of quick-chat lines that pop up in a bubble over your fighter.
+- Moving, blocking or attacking ends an emote; a hit ends it the usual way. Quick chat is a fixed list, so nothing a
+  stranger types reaches another player. Online the host checks each line comes from a fighter in the match and
+  allows one every 1.2 seconds.
+
 ## Tournaments
 - **Admin**: on the Tournament screen fill in the name, start time and prize, the fighters per team (1 to 4), rounds to
   win a match and whether CPUs fill short teams. Share the tournament code (or the `?t=CODE` link) with the teams ahead
@@ -155,12 +175,12 @@ several tabs of one browser and no network (`&lag=150` adds a 150 ms round trip)
 your own PeerJS server.
 
 ## Controls (rebindable in the Controls screen, saved in the browser)
-| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 | E | Q | 1 2 3 4 |
-| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ | , | Backspace | (unbound) |
-| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - | Num Enter | Num * | (unbound) |
-| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 | G | T | (unbound) |
+| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 | Taunt | Emotes / chat |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 | E | Q | 1 2 3 4 | F | C |
+| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ | , | Backspace | (unbound) | End | (unbound) |
+| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - | Num Enter | Num * | (unbound) | Num / | (unbound) |
+| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 | G | T | (unbound) | (unbound) | (unbound) |
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
@@ -170,9 +190,9 @@ Up to four pads (Xbox, PlayStation, Switch Pro, most USB/Bluetooth pads in stand
 default; the Controls screen lists connected pads, lets each be seated as P1-P4, rebinds every action (shared by all
 pads) and turns rumble on or off. A pad also steers that player's keyboard section, so mixing works.
 
-| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Pause |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | Start or View |
+| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Taunt | Emotes / chat | Pause |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | R3 | L3 | Start or View |
 
 Menus: D-pad or stick to move (held directions repeat), A select, B back, LB/RB change a value, Start pauses or
 selects. Presses that drive a menu are not counted in the fight, so picking Resume with A does not also jump.
@@ -325,6 +345,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
 - `hill.js` king of the hill (ring, scoring, respawns, scoreboard) · `arcade.js` the arcade ladder and its boss
+- `social.js` emotes, taunts and quick chat · `friends.js` / `friends-ui.js` the friends list, presence and room invites
 - `replay.js` instant replay of the final knockout and its shareable video clip (`share.js` posts it)
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 

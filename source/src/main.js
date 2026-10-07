@@ -2,7 +2,7 @@
 import { Keyboard, loadBindings, devices } from './input.js';
 import { Gamepads } from './gamepad.js';
 import { TouchControls, isTouchDevice } from './touch.js';
-import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
+import { ROSTER, TEAM_DEFAULT_NAMES, keyLabel } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
@@ -21,6 +21,9 @@ import { Training } from './training.js';
 import { Arcade } from './arcade.js';
 import { prompts, registerPromptDevice } from './prompts.js';
 import { padLabel } from './padmap.js';
+import { Comms, ChatGate, EMOTES, QUICK_CHAT } from './social.js';
+import { Friends } from './friends.js';
+import { FriendsMenus } from './friends-ui.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -46,6 +49,7 @@ function boot() {
   let session = null;
   let accountUi = null;
   let progressUi = null;
+  let friendsUi = null;
   // every player signs in with a José Madrid Salsa account; their matches go on their profile
   const account = new Account(params);
   let training = null;
@@ -79,14 +83,14 @@ function boot() {
       if (act === 'to-arcade') { online?.localMatch(); arcade.open(); return; }
       if (act.startsWith('arc-') && arcade.onAct(act)) return;
       if (progressUi?.onAct(act, el)) return;
-      if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
+      if (!accountUi?.onAct(act, el) && !friendsUi?.onAct(act, el)) online?.onAct(act, el);
     },
     onOpt: (key, el, d) => {
       if (key === 'tr-fighter') return training.changeFighter(d);
       if (key === 'arc-fighter') return arcade.changeFighter(d);
       if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
     },
-    onShow: (name) => { if (name === 'training') training.renderMenu(); if (name === 'arcade') arcade.render(); accountUi?.onShow(name); progressUi?.onShow(name); online?.onShow(name); },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); if (name === 'arcade') arcade.render(); accountUi?.onShow(name); progressUi?.onShow(name); friendsUi?.onShow(name); online?.onShow(name); },
     onSelect: (key) => online?.openSelect(key),
     // the locker's "make this my fighter" also becomes your pick online
     onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
@@ -199,13 +203,34 @@ function boot() {
   };
   requestAnimationFrame(touchLoop);
 
+  // ---- emotes, taunts and quick chat ----
+  const comms = new Comms();
+  devices.comms = comms;
+  const localChat = new ChatGate();
+  const seatFighter = (seat) => (game.online ? game.localFighter
+    : game.fighters.find((f) => f.isHuman && f.controller?.playerIndex === seat)) || null;
+  comms.enabled = () => game.mode === 'match' && !menus.active && !game.replay.playing && game.phase !== 'matchOver' && !!seatFighter(0);
+  comms.keyFor = (seat, a) => keyLabel(devices.display(seat, bindings[seat])[a]);
+  comms.onChat = (seat, i) => {
+    if (game.online) { session.sendQuickChat(i); return; }
+    const f = seatFighter(seat);
+    if (f?.alive && localChat.allow(seat)) game.hud.say(f, QUICK_CHAT[i]);
+  };
+  events.on('emote', ({ fighter, id }) => { if (id === 'taunt' && fighter) game.hud.say(fighter, EMOTES.taunt.say, 'taunt'); });
+  setInterval(() => comms.tick(), 250);
+
   session = new NetSession({ game, menus, keyboard, bindings });
+  session.onQuickChat = (slot, i) => { const f = game.fighters[slot]; if (f && game.online) game.hud.say(f, QUICK_CHAT[i]); };
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
   menus.shareRoom = () => (session.connected && session.kind === 'room' ? session.lobby.code : '');
   const chat = new ChatPanel({ session, keyboard });
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
+  // friends on the José Madrid Salsa site: who is online, private-room invites
+  const friends = new Friends({ account, session });
+  friendsUi = new FriendsMenus({ menus, friends, account, online, session, game });
+  friends.start();
   account.track({ events, game, session, onResult: (r) => accountUi.showResult(r) });
   // online, your fighter name is your leaderboard name
   account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
@@ -331,7 +356,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, arcade, pads, touch, devices, keyboard, account, wardrobe, progression };
+  window.__arena = { game, menus, events, bindings, session, audio, training, arcade, pads, touch, devices, keyboard, account, wardrobe, progression, friends, comms };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

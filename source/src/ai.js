@@ -9,6 +9,8 @@ const PREFERRED_SPECIAL_RANGE = {
   storm: [2, 12], shadow: [3, 11], ironwill: [0, 2.6],
 };
 
+const SHOW_OFF = ['taunt', 'taunt', 'flex', 'laugh'];
+
 export class AIController {
   constructor(difficulty = 'normal') {
     this.isHuman = false;
@@ -61,10 +63,19 @@ export class AIController {
       this.nextThink = now + this.p.reaction * (0.7 + Math.random() * 0.6);
       this.think(me, world);
     }
+    // after scoring a knockout a CPU sometimes shows off, if nobody is close enough to punish it
+    if (me.stats.kos > (this.kosSeen ?? me.stats.kos) && Math.random() < 0.45) this.showOff = { at: now + 0.5 + Math.random() * 0.6, id: SHOW_OFF[Math.floor(Math.random() * SHOW_OFF.length)] };
+    this.kosSeen = me.stats.kos;
+    if (this.showOff && now >= this.showOff.at) {
+      if (this.nearestEnemy(me, world) > 6) { intent.emote = this.showOff.id; this.wantMove = { x: 0, z: 0 }; }
+      this.showOff = null;
+    }
     intent.block = now < this.blockUntil;
     intent.mx = this.wantMove.x;
     intent.mz = this.wantMove.z;
     intent.dashHeld = this.sprint && !intent.block;
+    // see a show-off through unless someone comes close
+    if (me.state === 'emote' && !intent.block && this.nearestEnemy(me, world) > 3.5) { intent.mx = intent.mz = 0; intent.dashHeld = false; }
     return intent;
   }
 

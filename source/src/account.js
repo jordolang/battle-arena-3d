@@ -254,6 +254,8 @@ export class Account {
         won: !!r.won, knockouts: Math.max(0, Math.floor(+r.knockouts || 0)), streak: Math.max(0, Math.floor(+r.streak || 0)),
         recorded: !!r.recorded && !error, reason: String(error || r.reason || '').slice(0, 120),
       };
+      // ranked: the website may add the player's new rating
+      for (const k of ['rating', 'ratingDelta']) if (Number.isFinite(r[k])) shown[k] = Math.round(r[k]);
       if (game.phase === 'matchOver') onResult?.(shown); else this.hostedResult = shown;
       if (shown.recorded) this.refresh();
     }

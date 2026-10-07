@@ -1,7 +1,7 @@
 # Battle Arena 3D
 
 A 3D last-one-standing brawler in Three.js with three ways to play:
-- **Fight**: you against 1 to 7 CPU fighters in the coliseum.
+- **Fight**: you against 1 to 7 CPU fighters, in an arena you pick or a random one each match.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
 - **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
@@ -196,8 +196,20 @@ Block stops frontal hits but drains a guard meter that breaks. Specials cost hal
 Sudden death (default 75 s) brings in a closing ring of fire.
 
 ## Arenas, power-ups and tactics
-- **Coliseum** (Fight and Fight online): the moonlit arena with four pillars and four power-up pads.
-- **Badlands** (tournaments): a sunset canyon more than three times larger, with a walled base for each team, a ruined
+Fight setup and online rooms have an **Arena** option (Random by default); the online queue picks a random one each
+battle. Random rotates the Coliseum and the three hazard arenas. Hazards follow the round clock, so online clients and
+replays show exactly what the host simulates.
+- **Coliseum**: the moonlit arena with four pillars and four power-up pads.
+- **Sky Bridge**: a long stone bridge over a chasm, barred at both gates. From 18 s in, slabs crack (they glow and
+  shudder for 3 s) and drop away, roughly from the gates inward, until only the middle span is left. A fall is a
+  knockout, credited to whoever hit you last.
+- **Foundry**: an iron pit ringed by molten metal, with nine fire vents in the floor. From 6 s in, a few vents wake
+  every 3 s: the grate glows for 1.3 s, then a flame column throws anyone on it into the air and burns whoever stays.
+  More vents fire at once as the round goes on.
+- **Eye of the Storm**: a mountaintop ring of standing stones. A storm wall closes in three times a round (from 14 s,
+  38 s and 62 s), each time onto a smaller circle inside the last one, marked on the ground 8 s ahead. The storm
+  burns, and lightning strikes inside it.
+- **Badlands** (tournaments, or picked in setup): a sunset canyon more than three times larger, with a walled base for each team, a ruined
   shrine in the middle, boulders and broken walls to flank around, nine power-up pads and four healing springs.
   On a map this big the camera follows your own fight.
 - **Power-ups**: walk through the floating gem. Health (40% over 2 s), Shield (soaks 35% of your health), Rage (+30%

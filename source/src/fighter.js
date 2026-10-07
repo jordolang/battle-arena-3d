@@ -849,11 +849,14 @@ export class Fighter {
         this.vel.x *= fr; this.vel.z *= fr;
       }
     }
-    // gravity
+    // gravity. The floor drops away where a Sky Bridge slab has fallen, and once below the deck there is no climbing back.
+    const floor = this.pos.y < -0.25 ? -Infinity : world.arena.floorAt ? world.arena.floorAt(this.pos.x, this.pos.z, world) : 0;
+    if (this.grounded && floor < 0) this.grounded = false;
     if (!this.grounded || this.vel.y > 0) {
       this.vel.y -= GRAVITY * dt;
       this.pos.y += this.vel.y * dt;
-      if (this.pos.y <= 0) {
+      if (this.pos.y < -60) { this.pos.y = -60; this.vel.y = 0; }
+      if (this.pos.y <= floor) {
         this.pos.y = 0;
         const impact = this.vel.y;
         this.vel.y = 0;

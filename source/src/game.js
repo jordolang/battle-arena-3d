@@ -1,9 +1,12 @@
 // Game orchestration: renderer, fixed-step simulation, rounds and match flow.
 import * as THREE from 'three';
-import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, HILL, cleanTeamName, modeRules } from './config.js';
+import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, HILL, ARENAS, cleanTeamName, modeRules, pickArena } from './config.js';
 import { events } from './events.js';
 import { Arena } from './arena.js';
 import { Badlands } from './battleground.js';
+import { SkyBridge } from './bridge.js';
+import { Foundry } from './foundry.js';
+import { StormPeak } from './stormpeak.js';
 import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
@@ -15,6 +18,8 @@ import { Replay } from './replay.js';
 import { Hill } from './hill.js';
 import { wardrobe, randomLook } from './cosmetics.js';
 import { QualityGovernor, isHandheld } from './perf.js';
+
+const ARENA_TYPES = { coliseum: Arena, badlands: Badlands, bridge: SkyBridge, foundry: Foundry, storm: StormPeak };
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -75,6 +80,7 @@ export class Game {
     this.onMatchEnd = null;
     this.frameMs = 16;
     this.errors = 0;
+    this.demos = 0;
     this.fastForward = false;
     this.debugSpeed = 1;
     this.online = null;       // null | 'host' | 'client'
@@ -113,9 +119,10 @@ export class Game {
       this.effects.ring(fighter.pos.x, 0.1, fighter.pos.z, fighter.def.eyes, 3.2, 0.6);
       if (this.mode !== 'match') return;
       const v = nameTag(fighter);
-      const k = by ? nameTag(by) : '<b class="fire">The flames</b>';
-      const verb = by && allies(by, fighter) ? 'betrayed' : fighter.downed > 0 ? 'downed' : 'defeated';
-      this.hud.feed(`${k} <span>${verb}</span> ${v}${fighter.downed > 0 ? ' <span>· a teammate can revive</span>' : ''}`);
+      const k = by ? nameTag(by) : `<b class="fire">${fighter.diedTo || 'The flames'}</b>`;
+      const fell = by && fighter.diedTo === 'The fall';
+      const verb = by && allies(by, fighter) ? 'betrayed' : fell ? 'knocked' : fighter.downed > 0 ? 'downed' : 'defeated';
+      this.hud.feed(`${k} <span>${verb}</span> ${v}${fell ? ' <span>into the chasm</span>' : ''}${fighter.downed > 0 ? ' <span>· a teammate can revive</span>' : ''}`);
       flashScreen();
     });
     events.on('backstab', ({ fighter, by, quiet }) => {
@@ -148,14 +155,15 @@ export class Game {
 
   shake(a) { this.rig.shake(a); }
 
-  // Swaps the battleground: the coliseum for quick fights, the much larger Badlands for tournaments.
+  // Swaps the battleground (ARENAS in config.js). Each one is built the first time it is needed.
   useArena(name) {
-    this.rig.maxDistance = name === 'badlands' ? 50 : 36;
+    if (!ARENA_TYPES[name]) name = 'coliseum';
     if (!this.arenas[name]) {
-      this.arenas[name] = new Badlands(this.scene, 'high');
+      this.arenas[name] = new ARENA_TYPES[name](this.scene, 'high');
       this.perf.applyLight(this.arenas[name].moon);
     }
     const next = this.arenas[name];
+    this.rig.maxDistance = name === 'badlands' ? 50 : next.camDistance || 36;
     for (const a of Object.values(this.arenas)) if (a !== next) a.show(false);
     next.show(true);
     if (this.arena !== next) {
@@ -168,6 +176,8 @@ export class Game {
   // Mode rules (MODES in config.js) for the match about to start.
   applyRules(setup) {
     this.rules = { ...modeRules(setup?.mode || 'cpu'), ...(setup?.rules || {}) };
+    // a chosen arena (or 'random') overrides the mode's usual one; online hosts send a concrete name
+    if (setup?.map) this.rules.map = ARENAS[setup.map] ? setup.map : pickArena('random');
     this.useArena(this.rules.map);
     this.friendlyFire = !!this.rules.friendlyFire;
     this.reviveOn = !!this.rules.revive;
@@ -233,7 +243,8 @@ export class Game {
     this.hud.show(false);
     this.rig.mode = 'orbit';
     this.rig.follow = null;
-    this.applyRules({ mode: 'cpu' });
+    // the first demo is the coliseum (already built); later ones tour the other arenas
+    this.applyRules({ mode: 'cpu', map: this.demos++ ? 'random' : 'coliseum' });
     const ids = [...ROSTER.keys()].sort(() => Math.random() - 0.5).slice(0, 6);
     this.fighters = ids.map((i, k) => new Fighter(ROSTER[i], k, new AIController('normal'), randomLook()));
     for (const f of this.fighters) this.scene.add(f.model.root);
@@ -442,6 +453,7 @@ export class Game {
     for (const f of this.fighters) f.update(dt, this);
     this.resolveCollisions(dt);
     this.pickups.update(dt, this);
+    if (this.phase === 'fight') this.arena.hazards?.(dt, this);
     if (this.arena.zones.length && this.phase === 'fight') this.healZones(dt);
     if (this.reviveOn) this.tickRevives(dt);
 
@@ -607,7 +619,7 @@ export class Game {
         this.hill.animate(dt);
         this.pickups.animate(this.time);
         this.effects.update(dt);
-        this.arena.update(dt);
+        this.arena.update(dt, this);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
@@ -629,7 +641,7 @@ export class Game {
         this.effects.update(dt * scale);
         this.hill.animate(dt);
         this.pickups.animate(this.time);
-        this.arena.update(dt * scale);
+        this.arena.update(dt * scale, this);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;

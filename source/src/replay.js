@@ -20,7 +20,7 @@ const CLIP_EDGE = 1280;              // longest side of the recorded video, in p
 const MOVE_NAMES = Object.keys(MOVES);
 const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'lightning'];
 // events that only make sound; the replay re-emits them so the audio pass plays them again
-const SOUND_EVENTS = ['swing', 'hit', 'block', 'guardBreak', 'shieldBreak', 'wallHit', 'special', 'thunder', 'spearPull',
+const SOUND_EVENTS = ['hazard', 'swing', 'hit', 'block', 'guardBreak', 'shieldBreak', 'wallHit', 'special', 'thunder', 'spearPull',
   'skill', 'dodge', 'jump', 'land', 'ko', 'weaponBreak', 'armorBreak'];
 const K = 26;                        // floats per fighter per frame (see poseOf)
 // fields a replay overwrites, put back exactly when it ends
@@ -120,7 +120,7 @@ export class Replay {
     const p = [];
     for (const pr of g.projectiles) if (!pr.dead) p.push([pr.id, pr.kind, pr.pos.x, pr.pos.y, pr.pos.z, pr.dir.x, pr.dir.z, pr.owner?.slot ?? 0, pr.color, pr.size ?? 1, pr.stretch ?? 1]);
     for (const pr of g.net?.clientProjectiles?.values() || []) p.push([pr.id, pr.kind, pr.pos.x, pr.pos.y, pr.pos.z, pr.dir.x, pr.dir.z, pr.owner?.slot ?? 0, pr.color, pr.size ?? 1, pr.stretch ?? 1]);
-    this.frames.push({ t, f, p, rr: g.ringRadius });
+    this.frames.push({ t, f, p, rr: g.ringRadius, ft: g.fightTime, rd: g.round });
     const cut = t - KEEP;
     while (this.frames.length && this.frames[0].t < cut) this.frames.shift();
     while (this.fx.length && this.fx[0].t < cut) this.fx.shift();
@@ -169,7 +169,7 @@ export class Replay {
         return s;
       }),
       rig: { mode: g.rig.mode, yaw: g.rig.yaw, pitch: g.rig.pitch, distance: g.rig.distance, focus: g.rig.focus.clone(), orbitAngle: g.rig.orbitAngle },
-      ring: g.ringRadius,
+      ring: g.ringRadius, fightTime: g.fightTime, round: g.round,
     };
     for (const p of g.projectiles) p.mesh.visible = false;
     g.rig.mode = 'replay';
@@ -217,6 +217,9 @@ export class Replay {
     g.fighters.forEach((f, i) => this.applyPose(f, a.f, b.f, i * K, t, sdt));
     g.ringRadius = lerp(a.rr, b.rr, t);
     if (g.ringRadius < 90) g.arena.setFireRing(g.ringRadius); else g.arena.resetFireRing();
+    // arena hazards (crumbling slabs, vents, the storm) follow the round clock
+    g.round = a.rd ?? g.round;
+    g.fightTime = lerp(a.ft ?? 0, a.rd === b.rd ? b.ft ?? 0 : a.ft ?? 0, t);
     this.stepProjectiles(a, b, t, sdt);
     while (this.fxIdx < c.fx.length && c.fx[this.fxIdx].t <= this.clock) {
       const x = c.fx[this.fxIdx++];
@@ -230,7 +233,7 @@ export class Replay {
       events.emit(x.name, data);
     }
     g.effects.update(sdt);
-    g.arena.update(sdt);
+    g.arena.update(sdt, g);
     this.camera(dt);
   }
 
@@ -342,6 +345,7 @@ export class Replay {
         f.syncVisual(0, g);
       });
       g.ringRadius = s.ring;
+      g.fightTime = s.fightTime; g.round = s.round;
       if (s.ring < 90) g.arena.setFireRing(s.ring); else g.arena.resetFireRing();
       Object.assign(g.rig, { mode: s.rig.mode, yaw: s.rig.yaw, pitch: s.rig.pitch, distance: s.rig.distance, orbitAngle: s.rig.orbitAngle });
       g.rig.focus.copy(s.rig.focus);

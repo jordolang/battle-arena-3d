@@ -1,6 +1,6 @@
 // Screens for online play: host or join a room, the room lobby, the in-match
 // menu and the results buttons. Plugs into Menus through its onAct/onOpt/onShow hooks.
-import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
+import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName, arenaLabel } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { lookSummary } from '../cosmetics.js';
 import { shareOnFacebook } from '../share.js';
@@ -255,6 +255,7 @@ export class OnlineMenus {
       ['wins', 'Rounds to win', r.winsNeeded],
       ['diff', 'CPU skill', DIFFICULTY[r.difficulty]?.label || r.difficulty],
       ['sudden', 'Sudden death', r.suddenDeath ? `after ${r.suddenDeath}s` : 'Off'],
+      ['arena', 'Arena', arenaLabel(r.arena)],
       ['teams', 'Teams', r.teams ? `${r.teams} teams` : 'Free-for-all'],
     ];
     const tc = r.teams || 0;
@@ -340,7 +341,7 @@ export class OnlineMenus {
     this.teamNamesEl.innerHTML = '';
     this.teamNamesCount = -1;
     const ruleRows = {
-      brawl: [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']],
+      brawl: [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Random each battle, power-ups on']],
       hill: [['Battle', 'King of the hill'], ['Round', `First to ${HILL.target} points`], ['Knocked out', `Back in ${HILL.respawn}s`]],
       duo: [['Battle', 'Two teams of two'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']],
       ranked: [['Battle', 'One on one'], ['Match', 'Best of three'], ['Arena', 'Coliseum, no power-ups']],

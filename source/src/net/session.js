@@ -8,7 +8,7 @@
 // host leaves a room or a queue battle, another player takes over hosting from the
 // last snapshot and everyone else reconnects to them (migrate()).
 import { wardrobe, sanitizeLook, randomLook } from '../cosmetics.js';
-import { SIM_DT, ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
+import { SIM_DT, ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, ARENA_CHOICES, cleanTeamName, pickArena } from '../config.js';
 import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
@@ -58,7 +58,7 @@ const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'teleg
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
-  'weaponBreak', 'armorBreak', 'respawn', 'hillMove'];
+  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -215,7 +215,7 @@ export class NetSession {
     this.pending = new Set(); // players whose fundraiser code is being checked
     this.lobby = {
       code, base: code, epoch: 0, kind, inMatch: false,
-      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
+      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, arena: 'random', teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
       members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier), ...this.identity() }],
     };
     if (kind === 'queue') {
@@ -590,6 +590,7 @@ export class NetSession {
     if (key === 'wins') r.winsNeeded = Math.min(5, Math.max(1, r.winsNeeded + d));
     if (key === 'diff') r.difficulty = cyc(['easy', 'normal', 'hard', 'brutal'], r.difficulty);
     if (key === 'sudden') r.suddenDeath = cyc([0, 45, 60, 75, 90, 120], r.suddenDeath);
+    if (key === 'arena') r.arena = cyc(ARENA_CHOICES, r.arena || 'random');
     if (key === 'teams') {
       r.teams = cyc(TEAM_COUNTS, r.teams);
       if (r.teams) this.lobby.members.forEach((m, i) => { if (!(m.team < r.teams)) m.team = i % r.teams; });
@@ -662,7 +663,9 @@ export class NetSession {
       fighters.push(cpu);
     }
     const teams = { count: tc, names: rules.teamNames.slice(0, tc).map((n, i) => cleanTeamName(n, i)) };
-    this.launch({ setup: { mode: rules.mode || 'queue', winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
+    // hazard arenas for free-for-all brawls and private rooms; hill, duo and ranked stay on the coliseum
+    const fixed = rules.mode === 'hill' || (this.format && this.format !== 'brawl');
+    this.launch({ setup: { mode: rules.mode || 'queue', map: fixed ? 'coliseum' : pickArena(rules.arena), winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
   }
 
   // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team, reward }], label?, watchHint? }.

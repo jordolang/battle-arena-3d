@@ -30,6 +30,19 @@ export const MODES = {
   // the arcade ladder: one CPU after another, then the boss
   arcade:     { label: 'Arcade', map: 'coliseum', durability: 1.5, powerups: true, friendlyFire: false, revive: false },
 };
+// Battlegrounds. The hazard arenas are the coliseum's size; the Badlands is the big tournament canyon.
+// 'random' (the default for quick fights and the online queue) picks one of RANDOM_ARENAS each match.
+export const ARENAS = {
+  coliseum: { label: 'Coliseum', hint: 'Moonlit stone ring, no hazards.' },
+  bridge:   { label: 'Sky Bridge', hint: 'The bridge crumbles from the gates inward. Falling off is a knockout.' },
+  foundry:  { label: 'Foundry', hint: 'Fire vents erupt from the floor. Step off a grate when it glows.' },
+  storm:    { label: 'Eye of the Storm', hint: 'A storm wall closes in three times a round. Stay inside the ring.' },
+  badlands: { label: 'Badlands', hint: 'The huge tournament canyon, with healing springs.' },
+};
+export const ARENA_CHOICES = ['random', ...Object.keys(ARENAS)];
+export const RANDOM_ARENAS = ['coliseum', 'bridge', 'foundry', 'storm'];
+export function pickArena(choice) { return ARENAS[choice] ? choice : RANDOM_ARENAS[Math.floor(Math.random() * RANDOM_ARENAS.length)]; }
+export function arenaLabel(choice) { return ARENAS[choice]?.label || 'Random'; }
 
 // King of the hill. The ring sits on one of `spots` and moves every `moveEvery` seconds; whoever stands in
 // it alone (or with only teammates) scores a point a second. First to `target` takes the round; after

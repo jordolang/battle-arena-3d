@@ -60,7 +60,7 @@ function boot() {
     onResume: () => { menus.hideAll(); game.setPaused(false); },
     onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
     onQuit: () => { training.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
-    onQualityChange: (q) => setQuality(game, q),
+    onQualityChange: (q) => game.setQuality(q),
     onVolumeChange: (v) => audio.setVolumes(v),
     onTouchChange: (s) => applyTouch(s),
     pads,
@@ -81,6 +81,7 @@ function boot() {
     onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
   });
   menus.select = new CharacterSelect({ menus });
+  game.coveredBy = () => menus.active;
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
   training = new Training({ game, menus, bindings, keyboard, events });
@@ -276,7 +277,7 @@ function boot() {
   window.addEventListener('keydown', firstGesture, { once: true, capture: true });
   window.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
   const initial = loadSetupQuality(menus);
-  if (initial) setQuality(game, initial);
+  if (initial) game.setQuality(initial);
   game.startDemo();
   game.warmShaders();
   menus.show('title');
@@ -312,19 +313,6 @@ function boot() {
 }
 
 function loadSetupQuality(menus) { return menus.setup.quality !== 'auto' ? menus.setup.quality : null; }
-
-function setQuality(game, q) {
-  game.quality = q;
-  game.maxPixelRatio = q === 'low' ? 1 : q === 'high' ? 2 : 1.6;
-  game.pixelRatio = Math.min(window.devicePixelRatio || 1, game.maxPixelRatio);
-  if (q === 'low') game.pixelRatio = Math.min(game.pixelRatio, 0.85);
-  game.renderer.setPixelRatio(game.pixelRatio);
-  const shadows = q !== 'low';
-  game.renderer.shadowMap.enabled = shadows;
-  for (const a of Object.values(game.arenas)) a.moon.castShadow = shadows;
-  game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
-  game.resize();
-}
 
 try {
   boot();

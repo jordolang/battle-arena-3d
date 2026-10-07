@@ -2,7 +2,7 @@
 //   battle-arena.html   a complete page you can double-click to play offline (fonts need internet)
 //   artifact.html       the same page without the html/head/body shell, for publishing as an Artifact
 // Usage (from this folder):  npm i --no-save esbuild three@0.180.0 && node tools/build.mjs
-import { build } from 'esbuild';
+import { build, transform } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,7 @@ const result = await build({
   legalComments: 'none',
 });
 const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const css = readFileSync(join(root, 'css/style.css'), 'utf8');
+const css = (await transform(readFileSync(join(root, 'css/style.css'), 'utf8'), { loader: 'css', minify: true })).code.trim();
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 let body = html.split('<!--BODY-START-->')[1].split('<!--BODY-END-->')[0];
 // images referenced from the page are inlined so the build stays one self-contained file

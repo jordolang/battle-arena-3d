@@ -3,12 +3,13 @@
 // the team has earned. Teams come from /api/fundraisers (api/fundraisers.js); `?fundraisers-api=URL`
 // points at another copy for testing.
 import { normFundraiserCode, verifyFundraiserCode } from './net/tournament.js';
+import { OWN_DEPLOYMENT } from './share.js';
 
 const HOSTED = 'https://battle-arena-3d-mauve.vercel.app/api/fundraisers';
 const params = new URLSearchParams(globalThis.location?.search || '');
 // the hosted game asks its own server; the single-file copy (file:// or anywhere else) asks the hosted one
 export const FUNDRAISERS_API = params.get('fundraisers-api') ||
-  (/^https?:$/.test(globalThis.location?.protocol || '') && /\.vercel\.app$/.test(location.hostname) ? '/api/fundraisers' : HOSTED);
+  (OWN_DEPLOYMENT ? '/api/fundraisers' : HOSTED);
 export const SITE = 'https://fundraising.josemadrid.net';
 
 // Cosmetic rewards, by share of the goal raised. Nothing here changes how a fighter plays.

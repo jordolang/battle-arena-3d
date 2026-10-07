@@ -86,7 +86,7 @@ function brickTexture() {
 }
 
 // A lumpy rock: an icosahedron pushed about by a few sine waves.
-function rockGeometry(seed, detail = 1) {
+export function rockGeometry(seed, detail = 1) {
   const geo = new THREE.IcosahedronGeometry(1, detail);
   const p = geo.attributes.position;
   const rand = seeded(seed);

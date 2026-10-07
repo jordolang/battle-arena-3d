@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 *.log
 source/dist/
+source/tools/mocap/cache/

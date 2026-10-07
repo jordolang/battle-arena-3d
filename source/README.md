@@ -1,7 +1,7 @@
 # Battle Arena 3D
 
 A 3D last-one-standing brawler in Three.js with three ways to play:
-- **Fight**: you against 1 to 7 CPU fighters in the coliseum.
+- **Fight**: you against 1 to 7 CPU fighters, in an arena you pick or a random one each match.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
 - **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
@@ -76,14 +76,54 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   connected controller, the on-screen button names on a touch screen. `main.js` registers the gamepad and touch labels.
   On a controller View skips a lesson (or cycles the dummy); in the practice room L3 lays out gear and R3 resets.
 
-## Fight online: the 30-second queue
-- Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
+## Fight online: the queues
+- **Fight online** offers four queues, each with its own beacon (`queue-v9`, `hill-v9`, `duo-v9`, `ranked-v9`), so
+  players only meet others who picked the same one:
+  - **Free-for-all**: up to 8, last one standing, CPUs fill to 4 (the original queue, described below).
+  - **King of the hill**: free-for-all on the hill rules (see Modes), up to 8, CPUs fill to 4.
+  - **2v2**: two teams of two (Red and Blue); people are split across the teams as they join, CPUs fill the short side.
+  - **Ranked 1v1**: exactly two people and no CPUs. The host waits as long as it takes; once an opponent arrives the
+    fight starts after 5 seconds. Best of three, no power-ups. Leaving (or losing the connection) mid-match forfeits.
+    The lobby shows each player's site rating; the rating itself lives on the José Madrid Salsa site.
+- The queue: the first person to queue opens a battle and a 30-second countdown;
   everyone who queues before it ends lands in the same battle (up to 8; it starts early when full). CPU fighters fill
   a battle up to 4. While waiting you pick your fighter and can copy an invite link (`?room=CODE`) for friends.
-- After the battle everyone gets **Queue again**.
-- How the queue works without a server: the queue opener claims a well-known PeerJS name (`queue-v4`). Anyone else who
+- After the battle everyone gets **Queue again** (the same queue) or **Other queues**.
+- How the queue works without a server: the queue opener claims a well-known PeerJS name (`queue-v9` for the free-for-all). Anyone else who
   tries to claim it is told it is taken, asks its holder for the battle's room code, and joins that room. When the
   countdown ends the opener lets the name go, so the next person to queue opens the next battle.
+
+## Modes: king of the hill and the arcade
+- **King of the hill** (`src/hill.js`, `HILL` in `config.js`): pick it as the Mode on the Versus CPU screen, or queue for
+  it online. A glowing ring stands on one of five spots and moves every 22 seconds. Standing in it alone (or with only
+  teammates) scores a point a second; with a rival inside it is contested and nobody scores. First to 25 takes the
+  round; after 120 seconds the leader does. Knocked-out fighters come back after 3.5 seconds on the far side, briefly
+  untouchable. CPUs head for the ring and go after whoever holds it. Online, the host sends the hill in each snapshot.
+- **Arcade** (`src/arcade.js`): one player climbs a ladder of five CPU fights (easy, normal, two at once, hard, brutal)
+  and then the boss, El Diablo: a giant Titan, Onyx or Kane with nearly triple health, heavier blows and a golden
+  crown, best of three. Losing spends one of three continues and repeats the stage. Score is 1,000 x the stage (x3
+  for the boss) plus knockouts, damage and health left; the best score is kept in this browser. Each stage is a normal
+  local match, so it goes on your profile and counts toward locker unlocks.
+
+## Private rooms and friends
+- **Fight online → Host a private room** opens a room only people you invite can join: the host picks the rules,
+  teams and CPU count, and shares the room code, the `?room=CODE` link, or invites friends directly.
+- **Friends** (title screen when signed in, the Fight online screen, or **Invite friends** in a room lobby): add a
+  friend by their fighter name; once they accept you see who is online and who is in which private room. **Join**
+  takes you into a friend's room; **Invite** (while you are in a room) pops up a card on their screen with a Join
+  button. Invites last 10 minutes.
+- The friends list lives on the José Madrid Salsa site (`/api/arena/friends`, `/friends/presence`,
+  `/friends/invites`). While the game is open it checks in every 30 seconds and at once when you enter or leave a
+  private room (`friends.js`); room codes are only ever shown to accepted friends.
+
+## Emotes, taunts and quick chat (`social.js`)
+- **F** (R3 on a pad, the hand button on touch) taunts: a "come on then" that pays 12 special energy if nobody
+  punishes it (once every 6 seconds). CPUs sometimes show off after a knockout when nobody is near.
+- **C** (L3, the speech button on touch) opens a small menu; press it again for the next page. **1-4** (the D-pad, or a
+  tap) pick: Wave, Flex, Salsa and Laugh, then two pages of quick-chat lines that pop up in a bubble over your fighter.
+- Moving, blocking or attacking ends an emote; a hit ends it the usual way. Quick chat is a fixed list, so nothing a
+  stranger types reaches another player. Online the host checks each line comes from a fighter in the match and
+  allows one every 1.2 seconds.
 
 ## Tournaments
 - **Admin**: on the Tournament screen fill in the name, start time and prize, the fighters per team (1 to 4), rounds to
@@ -116,19 +156,31 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   It cannot run inside the Claude Artifact preview, which blocks WebRTC: use the standalone file or a hosted copy.
 - Very strict networks (some offices) can block direct connections; PeerJS's public relay servers are tried as a fallback.
 
+- **If the host leaves** (closes the tab, loses their connection or leaves mid-match), the battle carries on: the next
+  player in the room takes over hosting from the last snapshot, everyone else reconnects to them within a few seconds, and
+  a CPU takes the old host's fighter. The room code gains `-1` (then `-2`…). A host who closes their room from the
+  lobby still closes it for everyone, and tournaments stay with their admin.
+
 How it works (`src/net/`): the host runs the only simulation. Remote players send input (movement plus running tap counters,
 so a lost packet never drops a punch) and draw the match from 30 Hz snapshots, 100 ms behind the host for smooth interpolation.
+Your own fighter is the exception (`predict.js`): while it is free to act (moving, blocking, punching, kicking, jumping,
+dodging) your browser runs it ahead from your keys, so it answers at once instead of a round trip plus 100 ms later. Each
+snapshot says which of your inputs the host has applied and for how long; the guest compares the host's fighter with
+where it had it at that point and eases away any difference. Hits, damage, skills, specials and gear stay with the host,
+and when you are hit or knocked down your fighter is drawn from snapshots like everyone else's. `?predict=0` turns it off.
+Every 15th snapshot also carries the timers (buffs, shields, guard) a guest would need to take over hosting.
 Effects, announcer lines, the kill feed and every gameplay event are replayed on clients at the matching moment, so
 `events` listeners (the audio pass) fire on every machine. `transport.js` wraps PeerJS; add `?net=local` to test with
-several tabs of one browser and no network, or `?peerserver=host:port` to use your own PeerJS server.
+several tabs of one browser and no network (`&lag=150` adds a 150 ms round trip), or `?peerserver=host:port` to use
+your own PeerJS server.
 
 ## Controls (rebindable in the Controls screen, saved in the browser)
-| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 | E | Q | 1 2 3 4 |
-| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ | , | Backspace | (unbound) |
-| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - | Num Enter | Num * | (unbound) |
-| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 | G | T | (unbound) |
+| | Move | Punch | Kick | Block | Special | Jump | Dodge / sprint | Skill 1 | Skill 2 | Skill 3 | Use gun / spell | Next slot | Slots 1-4 | Taunt | Emotes / chat |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | W A S D | J | K | H | I | Space | Left Shift | = | - | 0 | E | Q | 1 2 3 4 | F | C |
+| P2 | Arrows | . | / | ; | ' | Enter | Right Shift | ] | [ | \\ | , | Backspace | (unbound) | End | (unbound) |
+| P3 | Numpad 8 4 5 6 | Num 1 | Num 2 | Num 3 | Num 7 | Num 0 | Num . | Num 9 | Num + | Num - | Num Enter | Num * | (unbound) | Num / | (unbound) |
+| P4 | Y B N M | U | O | L | 7 | 8 | V | 6 | 9 | 5 | G | T | (unbound) | (unbound) | (unbound) |
 
 P1's left hand moves and the right hand fights. Keys saved before this layout are reset to these defaults once.
 Esc or P pauses. Menus: arrows/WASD, Enter, Esc. When every keyboard player is out, hold X to fast-forward.
@@ -138,9 +190,9 @@ Up to four pads (Xbox, PlayStation, Switch Pro, most USB/Bluetooth pads in stand
 default; the Controls screen lists connected pads, lets each be seated as P1-P4, rebinds every action (shared by all
 pads) and turns rumble on or off. A pad also steers that player's keyboard section, so mixing works.
 
-| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Pause |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | Start or View |
+| Move | Punch | Kick | Special | Jump | Block | Dodge / sprint | Skills 1-3 | Use gun / spell | Next slot | Slots 1-4 | Taunt | Emotes / chat | Pause |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Left stick (analog: a light push walks) | X | Y | B | A | LT | RT | Right stick up / left / right | RB | LB | D-pad up / right / down / left | R3 | L3 | Start or View |
 
 Menus: D-pad or stick to move (held directions repeat), A select, B back, LB/RB change a value, Start pauses or
 selects. Presses that drive a menu are not counted in the fight, so picking Resume with A does not also jump.
@@ -164,8 +216,20 @@ Block stops frontal hits but drains a guard meter that breaks. Specials cost hal
 Sudden death (default 75 s) brings in a closing ring of fire.
 
 ## Arenas, power-ups and tactics
-- **Coliseum** (Fight and Fight online): the moonlit arena with four pillars and four power-up pads.
-- **Badlands** (tournaments): a sunset canyon more than three times larger, with a walled base for each team, a ruined
+Fight setup and online rooms have an **Arena** option (Random by default); the online queue picks a random one each
+battle. Random rotates the Coliseum and the three hazard arenas. Hazards follow the round clock, so online clients and
+replays show exactly what the host simulates.
+- **Coliseum**: the moonlit arena with four pillars and four power-up pads.
+- **Sky Bridge**: a long stone bridge over a chasm, barred at both gates. From 18 s in, slabs crack (they glow and
+  shudder for 3 s) and drop away, roughly from the gates inward, until only the middle span is left. A fall is a
+  knockout, credited to whoever hit you last.
+- **Foundry**: an iron pit ringed by molten metal, with nine fire vents in the floor. From 6 s in, a few vents wake
+  every 3 s: the grate glows for 1.3 s, then a flame column throws anyone on it into the air and burns whoever stays.
+  More vents fire at once as the round goes on.
+- **Eye of the Storm**: a mountaintop ring of standing stones. A storm wall closes in three times a round (from 14 s,
+  38 s and 62 s), each time onto a smaller circle inside the last one, marked on the ground 8 s ahead. The storm
+  burns, and lightning strikes inside it.
+- **Badlands** (tournaments, or picked in setup): a sunset canyon more than three times larger, with a walled base for each team, a ruined
   shrine in the middle, boulders and broken walls to flank around, nine power-up pads and four healing springs.
   On a map this big the camera follows your own fight.
 - **Power-ups**: walk through the floating gem. Health (40% over 2 s), Shield (soaks 35% of your health), Rage (+30%
@@ -243,6 +307,26 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   the adapter can supply the account's stats, items granted outright, fundraiser membership and saved looks, and
   receives finished matches and wardrobe changes.
 
+## Levels, challenges and the season pass
+- **XP**: every match you play (not training) earns XP: 60 for finishing, 120 for a win, 25 per round won, 20 per
+  knockout and up to 60 for damage. Matches against people (online, tournaments) pay 25% more. The results screen
+  shows what the match earned.
+- **Fighter levels**: the XP levels up the fighter you played, from 1 to 20 (level L to L+1 costs 300 + 100×(L−1) XP).
+  Levels 5, 10, 15 and 20 are Bronze, Silver, Gold and Salsa Master mastery. Levels show on the character select
+  cards and the Season pass screen.
+- **Challenges**: three daily and three weekly challenges ("Win 3 matches with Volt", "Parry 3 attacks", "Finish a
+  match online"…), the same for everyone on the same day or week. Dailies are worth 200 XP, weeklies 750. Days reset
+  at local midnight, weeks on Monday.
+- **Season pass**: a season is a calendar month, the same period the fundraisers run on. The pass has 20 tiers at
+  1,000 XP each; every tier gives a cosmetic outright (items normally earned from your record, ones you don't own yet
+  first, rarest last; the order changes every season).
+- **Group track**: when your fundraising group (the code on the title screen) reaches 25%, 50%, 75% and 100% of its goal
+  this month, you get +10%, +20%, +30% and +50% season XP and the Golden Jar colours, Golden Mantle, Salsa King Crown and
+  Molten Salsa colours. Goal data comes from the same `/api/fundraisers` as the donate button.
+- **Storage**: progress is kept in this browser under `battle-arena.progress.v1`, like the wardrobe.
+  `progression.connectProfile(adapter)` in `src/progression.js` is the hook for keeping it on the account. Items from the
+  pass reach the wardrobe through `wardrobe.grantedBy(fn)`.
+
 ## Code map (`src/`)
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
@@ -252,12 +336,16 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `cosmetics.js` clothing, colour schemes, headgear, back pieces and victory poses, unlock rules and the wardrobe ·
   `wardrobeModels.js` the 3D clothing and accessories · `bodyShapes.js` limb profiles shared by bodies and clothes ·
   `charSelect.js` the character select and locker room screen
+- `progression.js` XP, fighter levels, challenges and the season pass · `progression-ui.js` the Season pass screen and
+  the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
+- `hill.js` king of the hill (ring, scoring, respawns, scoreboard) · `arcade.js` the arcade ladder and its boss
+- `social.js` emotes, taunts and quick chat · `friends.js` / `friends-ui.js` the friends list, presence and room invites
 - `replay.js` instant replay of the final knockout and its shareable video clip (`share.js` posts it)
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 
@@ -274,6 +362,15 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   MP4 or WebM clip with `MediaRecorder`. Only the playback is encoded, so normal play pays almost nothing. The results
   screen offers Watch the knockout, Share the KO clip (the phone share sheet, or save plus the Facebook dialog on a
   computer) and Save clip. `window.__arena.game.replay.stats()` shows the buffer and clip.
+- **Animation:** built. Stance, running, jumping, the duck-and-roll dodge and every punch and kick are real motion
+  capture from the CMU Graphics Lab Motion Capture Database, retargeted onto the fighter's twelve joints by
+  `tools/mocap/bake.mjs` and stored as compact quaternion frames in `src/mocapData.js` (about 33 KB). Attack clips are
+  time-warped so the moment of contact lands in each move's active window, so timing and hitboxes are unchanged.
+  Specials, skills, aiming, blocking, knockdowns and victory poses stay hand-made and blend with the captured motion.
+  Clothing, weapons and armor ride on the same joints, so they follow the clips. To change clips, edit the list at
+  the top of `bake.mjs`, then `npm i --no-save three@0.180.0 && node tools/mocap/bake.mjs` and rebuild.
 - Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match, `&mode=tournament&teams=2` on the Badlands.
 
 Three.js r180 and PeerJS 1.5.5 are vendored in `vendor/` (both MIT, see `vendor/three-LICENSE` and `vendor/peerjs-LICENSE`).
+Fighter motion comes from the CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), which is free for research
+and commercial projects; BVH conversion by Bruce Hahne. The database was created with funding from NSF EIA-0196217.

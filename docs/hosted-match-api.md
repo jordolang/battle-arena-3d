@@ -12,7 +12,7 @@ All calls carry the caller's own `Authorization: Bearer <arena token>`.
 `POST /api/arena/hosted-matches` (host's token), sent when round 1 starts.
 
 ```json
-{ "mode": "ONLINE" | "TOURNAMENT", "room": "WQ4DE", "fighters": 4,
+{ "mode": "ONLINE" | "TOURNAMENT" | "RANKED", "room": "WQ4DE", "fighters": 4,
   "seats": [0, 1], "hostSeat": 0, "fighter": "titan", "seatFighters": ["titan", "volt"] }
 ```
 

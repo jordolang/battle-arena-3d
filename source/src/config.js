@@ -21,7 +21,34 @@ export const MODES = {
   tournament: { label: 'Tournament', map: 'badlands', durability: 2.6, powerups: true, friendlyFire: true, revive: true },
   // tutorial and practice room: you and a training dummy, nobody can be knocked out, gear is placed by the lesson
   practice:   { label: 'Training', map: 'coliseum', durability: 1, powerups: true, friendlyFire: false, revive: false },
+  // King of the hill: hold the glowing ring alone to score; knocked-out fighters come back after a few seconds
+  hill:       { label: 'King of the hill', map: 'coliseum', durability: 1.4, powerups: true, friendlyFire: false, revive: false, hill: true },
+  // the 2v2 online queue: two teams of two, CPUs fill empty places
+  duo:        { label: 'Online 2v2', map: 'coliseum', durability: 1.9, powerups: true, friendlyFire: false, revive: false },
+  // ranked 1v1: the same fight for both players, so no power-ups; best of three for rating
+  ranked:     { label: 'Ranked 1v1', map: 'coliseum', durability: 1.7, powerups: false, friendlyFire: false, revive: false },
+  // the arcade ladder: one CPU after another, then the boss
+  arcade:     { label: 'Arcade', map: 'coliseum', durability: 1.5, powerups: true, friendlyFire: false, revive: false },
 };
+// Battlegrounds. The hazard arenas are the coliseum's size; the Badlands is the big tournament canyon.
+// 'random' (the default for quick fights and the online queue) picks one of RANDOM_ARENAS each match.
+export const ARENAS = {
+  coliseum: { label: 'Coliseum', hint: 'Moonlit stone ring, no hazards.' },
+  bridge:   { label: 'Sky Bridge', hint: 'The bridge crumbles from the gates inward. Falling off is a knockout.' },
+  foundry:  { label: 'Foundry', hint: 'Fire vents erupt from the floor. Step off a grate when it glows.' },
+  storm:    { label: 'Eye of the Storm', hint: 'A storm wall closes in three times a round. Stay inside the ring.' },
+  badlands: { label: 'Badlands', hint: 'The huge tournament canyon, with healing springs.' },
+};
+export const ARENA_CHOICES = ['random', ...Object.keys(ARENAS)];
+export const RANDOM_ARENAS = ['coliseum', 'bridge', 'foundry', 'storm'];
+export function pickArena(choice) { return ARENAS[choice] ? choice : RANDOM_ARENAS[Math.floor(Math.random() * RANDOM_ARENAS.length)]; }
+export function arenaLabel(choice) { return ARENAS[choice]?.label || 'Random'; }
+
+// King of the hill. The ring sits on one of `spots` and moves every `moveEvery` seconds; whoever stands in
+// it alone (or with only teammates) scores a point a second. First to `target` takes the round; after
+// `limit` seconds the highest score does. Knocked-out fighters are back after `respawn` seconds.
+export const HILL = { radius: 3.2, target: 25, limit: 120, moveEvery: 22, respawn: 3.5, invuln: 1.6,
+  spots: [[0, 0], [7.2, 0], [-7.2, 0], [0, 7.2], [0, -7.2]] };
 export function modeRules(mode) { return { mode, ...(MODES[mode] || MODES.cpu) }; }
 
 // Team tactics and the wider move set.
@@ -237,34 +264,38 @@ export const ROSTER = [
 ];
 
 export const ACTIONS = ['up', 'down', 'left', 'right', 'punch', 'kick', 'block', 'special', 'jump', 'dash', 'skill1', 'skill2', 'skill3',
-  'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4'];
+  'use', 'cycle', 'slot1', 'slot2', 'slot3', 'slot4', 'taunt', 'comms'];
+// Taunting and the emote menu: never fighting moves, so they may share keys the practice room uses.
+export const SOCIAL_ACTIONS = new Set(['taunt', 'comms']);
 export const ACTION_LABELS = {
   up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right',
   punch: 'Punch', kick: 'Kick', block: 'Block (hold)', special: 'Special', jump: 'Jump',
   dash: 'Dodge (tap) / sprint (hold)', skill1: 'Skill 1', skill2: 'Skill 2', skill3: 'Skill 3',
   use: 'Use gun / spell', cycle: 'Next bar slot', slot1: 'Bar slot 1', slot2: 'Bar slot 2', slot3: 'Bar slot 3', slot4: 'Bar slot 4',
+  taunt: 'Taunt', comms: 'Emotes and quick chat',
 };
 
 // KeyboardEvent.code values, so bindings work on any keyboard layout.
 // P1's left hand moves (WASD, Shift), the right hand fights (J K I H) and casts (= - 0).
 // The ability bar (guns and spell tomes picked up in the arena): P1 fires with E, Q picks the next slot, 1-4 fire a slot directly.
+// F taunts; C opens the emote and quick-chat menu, where 1-4 pick (social.js).
 export const DEFAULT_BINDINGS = [
   { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
     punch: 'KeyJ', kick: 'KeyK', block: 'KeyH', special: 'KeyI', jump: 'Space',
     dash: 'ShiftLeft', skill1: 'Equal', skill2: 'Minus', skill3: 'Digit0',
-    use: 'KeyE', cycle: 'KeyQ', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4' },
+    use: 'KeyE', cycle: 'KeyQ', slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4', taunt: 'KeyF', comms: 'KeyC' },
   { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
     punch: 'Period', kick: 'Slash', block: 'Semicolon', special: 'Quote', jump: 'Enter',
     dash: 'ShiftRight', skill1: 'BracketRight', skill2: 'BracketLeft', skill3: 'Backslash',
-    use: 'Comma', cycle: 'Backspace', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'Comma', cycle: 'Backspace', slot1: '', slot2: '', slot3: '', slot4: '', taunt: 'End', comms: '' },
   { up: 'Numpad8', down: 'Numpad5', left: 'Numpad4', right: 'Numpad6',
     punch: 'Numpad1', kick: 'Numpad2', block: 'Numpad3', special: 'Numpad7', jump: 'Numpad0',
     dash: 'NumpadDecimal', skill1: 'Numpad9', skill2: 'NumpadAdd', skill3: 'NumpadSubtract',
-    use: 'NumpadEnter', cycle: 'NumpadMultiply', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'NumpadEnter', cycle: 'NumpadMultiply', slot1: '', slot2: '', slot3: '', slot4: '', taunt: 'NumpadDivide', comms: '' },
   { up: 'KeyY', down: 'KeyN', left: 'KeyB', right: 'KeyM',
     punch: 'KeyU', kick: 'KeyO', block: 'KeyL', special: 'Digit7', jump: 'Digit8',
     dash: 'KeyV', skill1: 'Digit6', skill2: 'Digit9', skill3: 'Digit5',
-    use: 'KeyG', cycle: 'KeyT', slot1: '', slot2: '', slot3: '', slot4: '' },
+    use: 'KeyG', cycle: 'KeyT', slot1: '', slot2: '', slot3: '', slot4: '', taunt: '', comms: '' },
 ];
 
 export const PLAYER_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d'];

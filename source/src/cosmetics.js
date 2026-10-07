@@ -221,6 +221,7 @@ class Wardrobe {
   constructor() {
     this.data = blank();
     this.profile = null;
+    this.grants = [];
     this.listeners = new Set();
     this.hasGroup = () => { try { return !!(localStorage.getItem(GROUP_KEY) || '').trim(); } catch { return false; } };
     this.load();
@@ -259,6 +260,7 @@ class Wardrobe {
     const item = ITEMS[slot]?.[id];
     if (!item) return false;
     if (this.profile?.owns?.(slot, id)) return true;
+    if (this.grants.some((fn) => fn(slot, id))) return true;
     const u = item.unlock;
     if (u.need === 'free') return true;
     if (u.need === 'group') return this.profile?.inGroup ? !!this.profile.inGroup() : this.hasGroup();
@@ -269,6 +271,7 @@ class Wardrobe {
   progress(slot, id) {
     const u = ITEMS[slot]?.[id]?.unlock;
     if (!u || u.need === 'free') return { have: 1, need: 1, done: true, text: 'Free for everyone' };
+    if (u.need !== 'group' && this.grants.some((fn) => fn(slot, id)) && (this.stats[u.need] || 0) < u.n) return { have: 1, need: 1, done: true, text: 'Earned on the season pass' };
     if (u.need === 'group') {
       const done = this.isUnlocked(slot, id);
       return { have: +done, need: 1, done, text: done ? 'Yours as a fundraiser member' : 'Enter your fundraising group on the title screen' };
@@ -338,6 +341,9 @@ class Wardrobe {
   }
 
   export() { return JSON.parse(JSON.stringify(this.data)); }
+
+  // Other ways to own an item outright, such as season pass tiers (progression.js): fn(slot, id) -> true when owned.
+  grantedBy(fn) { this.grants.push(fn); }
 
   // ---- profiles
   // Player profiles plug in here. An adapter may provide any of:

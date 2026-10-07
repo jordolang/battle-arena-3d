@@ -51,6 +51,8 @@ export class TouchControls {
       <div class="t-zone"><div class="t-stick"><div class="t-knob"></div></div></div>
       <div class="t-sys">
         <button class="t-sysbtn" data-sys="pause" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor"/></svg></button>
+        <button class="t-sysbtn" data-sys="taunt" aria-label="Taunt"><svg viewBox="0 0 24 24"><path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11m0-1V5a1.5 1.5 0 0 1 3 0v5m0-.5V7a1.5 1.5 0 0 1 3 0v6c0 4-2.5 7-6 7s-5-1.8-6.5-5L3.8 12a1.4 1.4 0 0 1 2.4-1.4L8 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button class="t-sysbtn" data-sys="comms" aria-label="Emotes and quick chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
         <button class="t-sysbtn" data-sys="fs" aria-label="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg></button>
       </div>
       <div class="t-pad">${BUTTONS.map((b) => `<div class="t-btn ${b.cls || ''}" data-a="${b.a}" style="--x:${b.x};--y:${b.y};--r:${b.r}">
@@ -110,6 +112,8 @@ export class TouchControls {
     // pointerup rather than click: a browser may not turn a tap into a click while the other thumb is on the stick
     el.querySelector('[data-sys=pause]').addEventListener('pointerup', () => this.onPause?.());
     el.querySelector('[data-sys=fs]').addEventListener('pointerup', () => toggleFullscreen());
+    // taunt and the emote menu count as presses, like the fighting buttons (the menu's entries are tapped)
+    for (const a of ['taunt', 'comms']) el.querySelector(`[data-sys=${a}]`).addEventListener('pointerup', () => { this.onUsed(); this.presses.set(a, (this.presses.get(a) || 0) + 1); });
 
     // tapping a slot of your item bar fires it, like 1-4 on the keyboard
     document.addEventListener('pointerdown', (e) => {

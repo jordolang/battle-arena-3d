@@ -137,6 +137,12 @@ export class Account {
   leaderboard(q) { return this.call(`/api/arena/leaderboard?${new URLSearchParams(q)}`, { auth: false }); }
   player(handle) { return this.call(`/api/arena/players/${encodeURIComponent(handle)}`, { auth: false }); }
 
+  // friends (friends.js): the check-in sends the private room you are in and returns the whole list
+  checkIn(room) { return this.call('/api/arena/friends/presence', { method: 'POST', body: { room: room || null } }); }
+  addFriend(handle) { return this.call('/api/arena/friends', { method: 'POST', body: { handle } }); }
+  removeFriend(handle) { return this.call(`/api/arena/friends/${encodeURIComponent(handle)}`, { method: 'DELETE' }); }
+  inviteFriend(handle, room) { return this.call('/api/arena/friends/invites', { method: 'POST', body: { handle, room } }); }
+
   // Reports matches to the website, which keeps the leaderboards.
   //  - Against the CPU this browser reports its own fighter's result (the website keeps those on the
   //    profile but leaves them off the online boards).
@@ -191,7 +197,7 @@ export class Account {
     const seats = owners.flatMap((o, i) => (o ? [i] : []));
     const hostSeat = owners.indexOf('host');
     const body = {
-      mode: MODE[session.kind] || 'ONLINE',
+      mode: session.queueRules?.rated ? 'RANKED' : MODE[session.kind] || 'ONLINE',
       room: roomCode(session),
       fighters: game.fighters.length,
       seats,

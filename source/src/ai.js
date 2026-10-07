@@ -9,6 +9,8 @@ const PREFERRED_SPECIAL_RANGE = {
   storm: [2, 12], shadow: [3, 11], ironwill: [0, 2.6],
 };
 
+const SHOW_OFF = ['taunt', 'taunt', 'flex', 'laugh'];
+
 export class AIController {
   constructor(difficulty = 'normal') {
     this.isHuman = false;
@@ -35,6 +37,7 @@ export class AIController {
       if (!this.bias.has(o.id)) this.bias.set(o.id, Math.random() * 4);
       const d = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z);
       let score = d + this.bias.get(o.id) + (o.hp / o.maxHp) * 3;
+      if (world.hill?.active && world.hill.inside(o)) score -= 4; // knock the king off the hill
       if (o === me.lastAttacker && world.time - me.lastHitTime < 3) score -= 5;
       // avoid everyone piling onto the same victim
       let crowd = 0;
@@ -60,10 +63,19 @@ export class AIController {
       this.nextThink = now + this.p.reaction * (0.7 + Math.random() * 0.6);
       this.think(me, world);
     }
+    // after scoring a knockout a CPU sometimes shows off, if nobody is close enough to punish it
+    if (me.stats.kos > (this.kosSeen ?? me.stats.kos) && Math.random() < 0.45) this.showOff = { at: now + 0.5 + Math.random() * 0.6, id: SHOW_OFF[Math.floor(Math.random() * SHOW_OFF.length)] };
+    this.kosSeen = me.stats.kos;
+    if (this.showOff && now >= this.showOff.at) {
+      if (this.nearestEnemy(me, world) > 6) { intent.emote = this.showOff.id; this.wantMove = { x: 0, z: 0 }; }
+      this.showOff = null;
+    }
     intent.block = now < this.blockUntil;
     intent.mx = this.wantMove.x;
     intent.mz = this.wantMove.z;
     intent.dashHeld = this.sprint && !intent.block;
+    // see a show-off through unless someone comes close
+    if (me.state === 'emote' && !intent.block && this.nearestEnemy(me, world) > 3.5) { intent.mx = intent.mz = 0; intent.dashHeld = false; }
     return intent;
   }
 
@@ -90,8 +102,19 @@ export class AIController {
       return;
     }
 
+    // 1a) get clear of an arena hazard: a cracking bridge slab, a waking fire vent, the storm wall
+    const flee = world.arena.danger?.(me.pos.x, me.pos.z, world);
+    if (flee) {
+      this.wantMove = flee;
+      this.sprint = !me.exhausted && me.stamina > 30;
+      return;
+    }
+
     // 1b) team play: revive a downed teammate, grab power-ups, heal at a spring
     if (this.support(me, world, dist)) return;
+
+    // 1c) king of the hill: get onto the ring, and fight whoever is standing on it
+    if (this.hill(me, world, dist)) return;
 
     // 2) defend against an incoming attack or projectile
     const threat = this.findThreat(me, world);
@@ -182,7 +205,7 @@ export class AIController {
         if (od < 2.2 && od > 0.01) { mx += (ox / od) * (2.2 - od) * 0.6; mz += (oz / od) * (2.2 - od) * 0.6; }
       }
       // steer round pillars, boulders and walls
-      const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe);
+      const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe, world);
       mx += av.x; mz += av.z;
       const l = Math.hypot(mx, mz) || 1;
       const hesitate = Math.random() > this.p.aggression ? 0.35 : 1;
@@ -310,7 +333,7 @@ export class AIController {
     let mx = x - me.pos.x, mz = z - me.pos.z;
     const l = Math.hypot(mx, mz) || 1;
     mx /= l; mz /= l;
-    const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe);
+    const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe, world);
     mx += av.x; mz += av.z;
     const l2 = Math.hypot(mx, mz) || 1;
     this.wantMove = { x: mx / l2, z: mz / l2 };
@@ -379,6 +402,20 @@ export class AIController {
       if ((rx * p.dir.x + rz * p.dir.z) / d > 0.85) return { type: 'projectile', dx: p.dir.x, dz: p.dir.z };
     }
     return null;
+  }
+
+  // King of the hill: walk (or sprint) to the ring unless a foe is right in your face. Once on it,
+  // the usual fighting takes over; targets standing on the ring are preferred (see pickTarget).
+  hill(me, world, dist) {
+    const h = world.hill;
+    if (!h?.active) return false;
+    const dx = h.pos.x - me.pos.x, dz = h.pos.z - me.pos.z, d = Math.hypot(dx, dz);
+    if (d < h.constructor.RADIUS_INSIDE) return false;
+    if (dist < 2.6 && Math.random() < 0.6) return false; // deal with the foe first
+    const avoid = world.arena.avoid?.(me.pos.x, me.pos.z, this.strafe) || { x: 0, z: 0 };
+    this.wantMove = { x: dx / d + avoid.x * 0.5, z: dz / d + avoid.z * 0.5 };
+    this.sprint = d > 6 && !me.exhausted && me.stamina > 40;
+    return true;
   }
 
   lineBlocked(me, T, world) {

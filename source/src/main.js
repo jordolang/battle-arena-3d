@@ -2,7 +2,7 @@
 import { Keyboard, loadBindings, devices } from './input.js';
 import { Gamepads } from './gamepad.js';
 import { TouchControls, isTouchDevice } from './touch.js';
-import { ROSTER, TEAM_DEFAULT_NAMES } from './config.js';
+import { ROSTER, TEAM_DEFAULT_NAMES, keyLabel } from './config.js';
 import { Game } from './game.js';
 import { Menus } from './ui.js';
 import { events } from './events.js';
@@ -14,10 +14,16 @@ import { ChatPanel } from './net/chat.js';
 import { CharacterSelect } from './charSelect.js';
 import { wardrobe } from './cosmetics.js';
 import { Account } from './account.js';
+import { Progression, trackMatchCounts } from './progression.js';
+import { ProgressionMenus } from './progression-ui.js';
 import { AccountMenus } from './account-ui.js';
 import { Training } from './training.js';
+import { Arcade } from './arcade.js';
 import { prompts, registerPromptDevice } from './prompts.js';
 import { padLabel } from './padmap.js';
+import { Comms, ChatGate, EMOTES, QUICK_CHAT } from './social.js';
+import { Friends } from './friends.js';
+import { FriendsMenus } from './friends-ui.js';
 
 function boot() {
   const keyboard = new Keyboard();
@@ -42,14 +48,18 @@ function boot() {
   let online = null;
   let session = null;
   let accountUi = null;
+  let progressUi = null;
+  let friendsUi = null;
   // every player signs in with a José Madrid Salsa account; their matches go on their profile
   const account = new Account(params);
   let training = null;
+  let arcade = null;
 
   const menus = new Menus({
     keyboard, bindings,
     onStart: (setup) => {
       training.stop();
+      arcade.stop();
       lastSetup = setup;
       online?.localMatch();
       audio.unlock();
@@ -58,9 +68,9 @@ function boot() {
       game.startMatch(setup, bindings);
     },
     onResume: () => { menus.hideAll(); game.setPaused(false); },
-    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
-    onQuit: () => { training.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
-    onQualityChange: (q) => setQuality(game, q),
+    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } if (arcade.active) { arcade.restartStage(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
+    onQuit: () => { training.stop(); arcade.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
+    onQualityChange: (q) => game.setQuality(q),
     onVolumeChange: (v) => audio.setVolumes(v),
     onTouchChange: (s) => applyTouch(s),
     pads,
@@ -69,21 +79,34 @@ function boot() {
       // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
       if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
       if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
-      if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
+      // the arcade ladder
+      if (act === 'to-arcade') { online?.localMatch(); arcade.open(); return; }
+      if (act.startsWith('arc-') && arcade.onAct(act)) return;
+      if (progressUi?.onAct(act, el)) return;
+      if (!accountUi?.onAct(act, el) && !friendsUi?.onAct(act, el)) online?.onAct(act, el);
     },
     onOpt: (key, el, d) => {
       if (key === 'tr-fighter') return training.changeFighter(d);
+      if (key === 'arc-fighter') return arcade.changeFighter(d);
       if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
     },
-    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); if (name === 'arcade') arcade.render(); accountUi?.onShow(name); progressUi?.onShow(name); friendsUi?.onShow(name); online?.onShow(name); },
     onSelect: (key) => online?.openSelect(key),
     // the locker's "make this my fighter" also becomes your pick online
     onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
   });
   menus.select = new CharacterSelect({ menus });
+  game.coveredBy = () => menus.active;
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
+  // fighter levels, daily and weekly challenges and the season pass; the group track follows the
+  // fundraising team found for the code on the title screen
+  const progression = new Progression();
+  progression.group = () => menus.fundraiser?.team || null;
+  menus.progression = progression;
+  progressUi = new ProgressionMenus({ menus, progression });
   training = new Training({ game, menus, bindings, keyboard, events });
+  arcade = new Arcade({ game, menus, bindings });
   // ---- controllers and touch ----
   const touch = new TouchControls({
     onPause: () => keyboard.dispatch('Escape'),
@@ -180,38 +203,73 @@ function boot() {
   };
   requestAnimationFrame(touchLoop);
 
+  // ---- emotes, taunts and quick chat ----
+  const comms = new Comms();
+  devices.comms = comms;
+  const localChat = new ChatGate();
+  const seatFighter = (seat) => (game.online ? game.localFighter
+    : game.fighters.find((f) => f.isHuman && f.controller?.playerIndex === seat)) || null;
+  comms.enabled = () => game.mode === 'match' && !menus.active && !game.replay.playing && game.phase !== 'matchOver' && !!seatFighter(0);
+  comms.keyFor = (seat, a) => keyLabel(devices.display(seat, bindings[seat])[a]);
+  comms.onChat = (seat, i) => {
+    if (game.online) { session.sendQuickChat(i); return; }
+    const f = seatFighter(seat);
+    if (f?.alive && localChat.allow(seat)) game.hud.say(f, QUICK_CHAT[i]);
+  };
+  events.on('emote', ({ fighter, id }) => { if (id === 'taunt' && fighter) game.hud.say(fighter, EMOTES.taunt.say, 'taunt'); });
+  setInterval(() => comms.tick(), 250);
+
   session = new NetSession({ game, menus, keyboard, bindings });
+  session.onQuickChat = (slot, i) => { const f = game.fighters[slot]; if (f && game.online) game.hud.say(f, QUICK_CHAT[i]); };
   online = new OnlineMenus({ menus, session });
   // a private room stays open after a match, so a shared result doubles as an invite into it
   menus.shareRoom = () => (session.connected && session.kind === 'room' ? session.lobby.code : '');
   const chat = new ChatPanel({ session, keyboard });
   online.tourney = new TournamentMenus({ menus, session, online, chat });
   window.addEventListener('pagehide', () => session.leave(null, true));
+  // friends on the José Madrid Salsa site: who is online, private-room invites
+  const friends = new Friends({ account, session });
+  friendsUi = new FriendsMenus({ menus, friends, account, online, session, game });
+  friends.start();
   account.track({ events, game, session, onResult: (r) => accountUi.showResult(r) });
   // online, your fighter name is your leaderboard name
   account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
   account.refresh();
+  // ranked lobbies show each player's site handle and rating
+  session.identity = () => (account.handle ? { handle: account.handle, rating: account.profile?.player?.rating } : {});
 
   // Your match counts toward unlocking outfits: P1 on this keyboard, or your own fighter online.
   const recordMatch = (champ, fighters) => {
     const me = game.online ? game.localFighter
       : fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0];
+    menus.progress = null;
     if (!me || game.mode !== 'match' || training.active) return []; // practice doesn't count
     const won = champ === me || (champ && champ.team >= 0 && champ.team === me.team);
+    // XP first: season pass tiers it reaches grant items, which the wardrobe then announces
+    const prog = menus.progress = progression.recordMatch({
+      fighter: me.def.id, won, rounds: me.stats.wins, kos: me.stats.kos, damage: me.stats.damage, versus: !!game.online, counts: matchCounts(),
+    });
     const fresh = wardrobe.recordMatch({ won, rounds: me.stats.wins, kos: me.stats.kos });
-    if (fresh.length && session.kind === 'tournament') game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    if (session.kind === 'tournament') {
+      game.hud.feed(`<b>+${prog.xp} XP</b> <span>${prog.levelUps.length ? `${me.def.name} level ${prog.after.level}` : `season tier ${prog.tier.tier}`}</span>`);
+      if (fresh.length) game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    }
     return fresh;
   };
+  // this match's specials, skills, parries, power-ups and guard breaks, for challenges
+  const matchCounts = trackMatchCounts(events, () => (game.online ? game.localFighter
+    : game.fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0]) || null);
 
   game.onMatchEnd = (champ, fighters) => {
     menus.newUnlocks = recordMatch(champ, fighters);
-    // tournament matches go back to the bracket instead of the results screen
+    // tournament matches go back to the bracket instead of the results screen, arcade stages to the ladder
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
+    if (arcade.active) { arcade.onMatchEnd(champ); return; }
     menus.screens.results.querySelector('.acct-result').textContent = account.recording ? 'Saving to your profile…' : '';
     // freeze the deciding knockout now, then play it back (recording the clip) before the results
     const teamed = champ.team >= 0 && champ.teamColor != null;
     game.replay.capture(teamed ? `${champ.teamName} win the arena` : `${champ.name}${champ.label !== 'CPU' ? ` (${champ.label})` : ''} wins`);
-    const results = () => { if (game.phase === 'matchOver') menus.showResults(champ, fighters); };
+    const results = () => { if (game.phase === 'matchOver') { menus.showResults(champ, fighters); progressUi.renderResult(menus.progress); } };
     setTimeout(() => {
       if (game.phase !== 'matchOver') return;
       game.keyboard.captureGameKeys = false;
@@ -276,7 +334,7 @@ function boot() {
   window.addEventListener('keydown', firstGesture, { once: true, capture: true });
   window.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
   const initial = loadSetupQuality(menus);
-  if (initial) setQuality(game, initial);
+  if (initial) game.setQuality(initial);
   game.startDemo();
   game.warmShaders();
   menus.show('title');
@@ -298,13 +356,13 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account, wardrobe };
+  window.__arena = { game, menus, events, bindings, session, audio, training, arcade, pads, touch, devices, keyboard, account, wardrobe, progression, friends, comms };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));
     const tc = Math.max(0, Math.min(4, +params.get('teams') || 0));
     menus.cb.onStart({
-      mode: params.get('mode') || 'cpu', winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
+      mode: params.get('mode') || 'cpu', map: params.get('map') || undefined, winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
       teams: { count: tc, names: TEAM_DEFAULT_NAMES.slice(0, tc) },
       slots: Array.from({ length: n }, (_, i) => ({ control: 'cpu', fighter: i % ROSTER.length, team: tc ? i % tc : -1 })),
     });
@@ -312,19 +370,6 @@ function boot() {
 }
 
 function loadSetupQuality(menus) { return menus.setup.quality !== 'auto' ? menus.setup.quality : null; }
-
-function setQuality(game, q) {
-  game.quality = q;
-  game.maxPixelRatio = q === 'low' ? 1 : q === 'high' ? 2 : 1.6;
-  game.pixelRatio = Math.min(window.devicePixelRatio || 1, game.maxPixelRatio);
-  if (q === 'low') game.pixelRatio = Math.min(game.pixelRatio, 0.85);
-  game.renderer.setPixelRatio(game.pixelRatio);
-  const shadows = q !== 'low';
-  game.renderer.shadowMap.enabled = shadows;
-  for (const a of Object.values(game.arenas)) a.moon.castShadow = shadows;
-  game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
-  game.resize();
-}
 
 try {
   boot();

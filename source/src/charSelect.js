@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { ROSTER, SPECIALS, SKILLS } from './config.js';
 import { buildFighterModel, computePose, applyPose, animateLife } from './fighterModel.js';
 import { dressFighter } from './wardrobeModels.js';
+import { isHandheld } from './perf.js';
 import { wardrobe, bodyDef, BODY, BODY_KEYS, ITEMS, SLOTS, SLOT_LABELS, RARITY, DEFAULT_LOOK, ITEM_COUNT, outfitColors, sanitizeLook } from './cosmetics.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -216,7 +217,7 @@ export class CharacterSelect {
   renderRoster() {
     const cards = ROSTER.map((def, i) => `<button class="nav cs-card" data-act="cs-pick" data-i="${i}" style="--fc:${hex(def.eyes)}">
         <img class="cs-portrait" alt="" data-i="${i}">
-        <span class="cs-cname">${esc(def.name)}</span><span class="cs-role">${esc(def.role || '')}</span></button>`);
+        <span class="cs-cname">${esc(def.name)}</span><span class="cs-role">${esc(def.role || '')}</span>${this.levelBadge(def)}</button>`);
     if (this.opts.random) cards.push(`<button class="nav cs-card random" data-act="cs-pick" data-i="-1" style="--fc:#a3968a">
         <span class="cs-portrait q">?</span><span class="cs-cname">Random</span><span class="cs-role">Any of the eight</span></button>`);
     this.q('.cs-roster').innerHTML = cards.join('');
@@ -225,6 +226,12 @@ export class CharacterSelect {
     this.q('.cs-record').innerHTML = this.opts.wardrobe
       ? `<span><b>${st.wins}</b> wins</span><span><b>${st.kos}</b> KOs</span><span><b>${st.matches}</b> matches</span><span class="cs-owned"><b>${wardrobe.unlockedCount}</b>/${ITEM_COUNT} unlocked</span>`
       : '';
+  }
+
+  // the fighter's level from the season pass (progression.js), on the people's own select screens
+  levelBadge(def) {
+    const f = this.opts.wardrobe ? this.menus.progression?.fighter(def.id) : null;
+    return f ? `<span class="cs-lv"${f.mastery ? ` style="color:${f.mastery.color}"` : ''} title="${f.mastery ? `${f.mastery.label} mastery` : ''}">Lv ${f.level}</span>` : '';
   }
 
   renderInfo() {
@@ -366,7 +373,7 @@ export class CharacterSelect {
     const key = new THREE.DirectionalLight(0xffd2a0, 2.6);
     key.position.set(2.5, 4.5, 3.5);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.setScalar(isHandheld() ? 512 : 1024);
     Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 2.5, bottom: -0.5, near: 1, far: 12 });
     scene.add(key);
     const rim = new THREE.DirectionalLight(0xff6a2a, 2.2);
@@ -459,7 +466,7 @@ export class CharacterSelect {
     const r = this.renderer;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = Math.min(window.devicePixelRatio || 1, isHandheld() ? 1.5 : 2);
     if (this.size !== `${w}x${h}@${pr}`) {
       this.size = `${w}x${h}@${pr}`;
       r.setPixelRatio(pr);

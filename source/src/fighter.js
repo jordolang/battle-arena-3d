@@ -6,6 +6,7 @@ import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward
 import { executeSpecial, executeSkill } from './specials.js';
 import { dressFighter } from './wardrobeModels.js';
 import { bodyDef } from './cosmetics.js';
+import { EMOTES, EMOTE_LOCK, TAUNT_ENERGY, TAUNT_COOLDOWN } from './social.js';
 
 const FREE_STATES = new Set(['idle']);
 const TAU = Math.PI * 2;
@@ -105,6 +106,8 @@ export class Fighter {
     this.guardRegenDelay = 0;
     this.stamina = STAMINA_MAX;
     this.staminaDelay = 0;
+    this.emoteId = null;
+    this.tauntReady = 0; // world time a finished taunt pays energy again
     this.exhausted = false;
     this.sprinting = false;
     this.cooldowns = [0, 0, 0];
@@ -260,6 +263,7 @@ export class Fighter {
       case 'block': this.tickBlock(dt, world); break;
       case 'dodge': this.tickDodge(dt, world); break;
       case 'skill': this.tickSkill(dt, world); break;
+      case 'emote': this.tickEmote(dt, world); break;
       case 'blockstun': case 'hitstun': case 'guardbreak': case 'frozen':
         if (this.stateTime >= this.stateDuration) {
           if (this.state === 'frozen') this.model.ice.visible = false;
@@ -383,6 +387,7 @@ export class Fighter {
     const action = this.buffer?.action;
     if (action === 'dash' && this.grounded) { this.consumeBuffer(); if (this.startDodge(world)) return; }
     if (it.block && this.grounded) { this.setState('block'); return; }
+    if (it.emote && !action && this.grounded && Math.hypot(it.mx, it.mz) < 0.3 && this.startEmote(it.emote, world)) return;
     if (action) {
       if (action === 'jump') {
         this.consumeBuffer();
@@ -411,6 +416,31 @@ export class Fighter {
       const want = Math.atan2(it.mx, it.mz);
       this.facing += wrapAngle(want - this.facing) * Math.min(1, dt * 14);
     }
+  }
+
+  // Emotes and the taunt (social.js): stand and show off. Moving, blocking or any attack ends it
+  // after a moment; a hit ends it the usual way. A taunt seen through to the end pays some energy.
+  startEmote(id, world) {
+    const e = EMOTES[id];
+    if (!e) return false;
+    this.emoteId = id;
+    this.sprinting = false;
+    this.setState('emote', e.time);
+    world.events.emit('emote', { fighter: this, id });
+    return true;
+  }
+
+  tickEmote(dt, world) {
+    const it = this.intent;
+    if (this.stateTime > EMOTE_LOCK && (this.buffer || it.block || Math.hypot(it.mx, it.mz) > 0.3)) { this.setState('idle'); this.tickFree(dt, world); return; }
+    if (it.emote && it.emote !== this.emoteId && this.startEmote(it.emote, world)) return;
+    if (this.stateTime < this.stateDuration) return;
+    if (this.emoteId === 'taunt' && world.time >= this.tauntReady) {
+      this.tauntReady = world.time + TAUNT_COOLDOWN;
+      this.energy = Math.min(ENERGY_MAX, this.energy + TAUNT_ENERGY);
+      world.events.emit('taunt', { fighter: this });
+    }
+    this.setState('idle');
   }
 
   // Attacking out of a cloak reveals you.
@@ -481,6 +511,7 @@ export class Fighter {
   }
 
   checkHits(world) {
+    if (world.predict) return; // an online guest's look-ahead copy: only the host lands blows
     const m = this.move;
     const power = this.dmgMult();
     // a weapon in hand turns punches into slashes, chops or crushing blows
@@ -848,11 +879,14 @@ export class Fighter {
         this.vel.x *= fr; this.vel.z *= fr;
       }
     }
-    // gravity
+    // gravity. The floor drops away where a Sky Bridge slab has fallen, and once below the deck there is no climbing back.
+    const floor = this.pos.y < -0.25 ? -Infinity : world.arena.floorAt ? world.arena.floorAt(this.pos.x, this.pos.z, world) : 0;
+    if (this.grounded && floor < 0) this.grounded = false;
     if (!this.grounded || this.vel.y > 0) {
       this.vel.y -= GRAVITY * dt;
       this.pos.y += this.vel.y * dt;
-      if (this.pos.y <= 0) {
+      if (this.pos.y < -60) { this.pos.y = -60; this.vel.y = 0; }
+      if (this.pos.y <= floor) {
         this.pos.y = 0;
         const impact = this.vel.y;
         this.vel.y = 0;

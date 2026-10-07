@@ -4,20 +4,37 @@
 // the match from the host's snapshots, slightly in the past so motion stays smooth.
 // Visual effects, announcer lines and gameplay events are replayed on the same
 // timeline, so a client also hears every `events` emit the audio pass listens to.
+// A guest's own fighter runs ahead on its own machine (predict.js), and when the
+// host leaves a room or a queue battle, another player takes over hosting from the
+// last snapshot and everyone else reconnects to them (migrate()).
 import { wardrobe, sanitizeLook, randomLook } from '../cosmetics.js';
-import { ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, cleanTeamName } from '../config.js';
+import { SIM_DT, ROSTER, MOVES, SKILLS, SKILL_IDS, WEAPON_IDS, TEAM_COUNTS, TEAM_DEFAULT_NAMES, ARENA_CHOICES, cleanTeamName, pickArena } from '../config.js';
 import { AIController } from '../ai.js';
 import { OnlineKeyboardController, NetController, NET_TAPS } from '../input.js';
 import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
+import { Predictor } from './predict.js';
+import { EMOTE_IDS, ChatGate, cleanChat } from '../social.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 8;
+export const PROTOCOL = 11;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
+// The online queues. Each has its own well-known beacon, so players only meet others who picked the same one.
+//   brawl   free-for-all, up to 8, CPUs fill to 4
+//   hill    king of the hill, free-for-all, up to 8, CPUs fill to 4
+//   duo     2v2: two teams of two, CPUs fill empty places
+//   ranked  1v1 for rating: exactly two players, no CPUs; the fight starts as soon as an opponent is found
+export const QUEUES = {
+  brawl:  { beacon: 'queue', label: 'Free-for-all', max: MAX_PLAYERS, fill: 4, mode: 'queue', teams: 0, wins: 2, sudden: 75 },
+  hill:   { beacon: 'hill', label: 'King of the hill', max: MAX_PLAYERS, fill: 4, mode: 'hill', teams: 0, wins: 2, sudden: 0 },
+  duo:    { beacon: 'duo', label: '2v2', max: 4, fill: 4, mode: 'duo', teams: 2, wins: 2, sudden: 75 },
+  ranked: { beacon: 'ranked', label: 'Ranked 1v1', max: 2, fill: 2, mode: 'ranked', teams: 0, wins: 2, sudden: 60, rated: true },
+};
+const RANKED_LEAD = 5; // seconds between finding an opponent and the ranked fight starting
 const CHAT_KEEP = 80;
 export const ONLINE_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d', '#ff6bd5', '#b38bff', '#4ff0d8', '#f2f2f2'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -25,8 +42,11 @@ const SNAP_HZ = 30;
 const INPUT_HZ = 60;
 const INTERP_DELAY = 0.1;     // seconds a client draws behind the host
 const PEER_TIMEOUT = 10000;   // ms without any message before the host drops a player
+const HOST_TIMEOUT = 4000;    // ms without a snapshot mid-match before a guest gives the host up
+const RETURN_GRACE = 7000;    // ms the other players get to reconnect to a new host
+const DEEP_EVERY = 15;        // every 15th snapshot also carries the timers a new host would need
 
-export const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill'];
+export const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill', 'emote'];
 const PHASES = ['idle', 'intro', 'fight', 'roundOver', 'matchOver'];
 const MOVE_NAMES = Object.keys(MOVES);
 const PROJECTILES = {
@@ -39,7 +59,7 @@ const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'teleg
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
-  'weaponBreak', 'armorBreak'];
+  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard', 'emote', 'taunt'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -58,9 +78,14 @@ export function randomCode() {
   for (let i = 0; i < 5; i++) c += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
   return c;
 }
+// A room code is five characters; a room that moved to a new host adds -1, -2… (see migrate()).
 export function cleanCode(s) {
-  return String(s ?? '').toUpperCase().split('').filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, 5);
+  const [base, moved] = String(s ?? '').toUpperCase().split('-');
+  const code = base.split('').filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, 5);
+  const n = String(moved ?? '').replace(/\D/g, '').slice(0, 2);
+  return moved !== undefined && code.length === 5 ? `${code}-${n}` : code;
 }
+export const isRoomCode = (code) => /^[A-Z2-9]{5}(-\d{1,2})?$/.test(code);
 // Each player's saved looks by fighter id, as sent to the host: unknown fighters and items are dropped.
 // (Ownership is not checked here yet; player profiles will vouch for it later.)
 export function cleanLooks(map) {
@@ -143,12 +168,21 @@ export class NetSession {
     this.onLeft = () => {};
     this.onChat = () => {};
     this.onAccount = () => {}; // guests: seat tickets and recorded results from the host (account.js)
+    this.onQuickChat = () => {}; // (fighter slot, line index) during a match (social.js)
+    this.chatGate = new ChatGate();
     this.unhook = [];
     this.chat = [];
     this.beacon = null;
+    // who you are on the José Madrid Salsa site, shown in ranked lobbies: { handle, rating }. main.js fills it in.
+    this.identity = () => ({});
+    // ?predict=0 turns off client-side prediction (for comparing, or if it ever misbehaves)
+    this.noPredict = new URLSearchParams(location.search).get('predict') === '0';
   }
 
   get kind() { return this.lobby?.kind || null; }
+  // which queue this lobby is ('brawl', 'hill', 'duo', 'ranked'), or null outside the queue
+  get format() { return this.lobby?.kind === 'queue' ? this.lobby.format || 'brawl' : null; }
+  get queueRules() { return QUEUES[this.format] || null; }
   get me() { return this.lobby?.members.find((m) => m.id === this.myId) || null; }
 
   get connected() { return !!this.role; }
@@ -156,7 +190,7 @@ export class NetSession {
 
   // ---------------------------------------------------------------- hosting
   // kind: 'room' (a private room), 'queue' (the 30-second public queue) or 'tournament' (fixed `code`, the host is the admin)
-  async host({ kind = 'room', code: fixed = null, tournament = null, keepBeacon = false } = {}) {
+  async host({ kind = 'room', code: fixed = null, tournament = null, keepBeacon = false, format = 'brawl' } = {}) {
     const beacon = keepBeacon ? this.beacon : null;
     if (beacon) this.beacon = null;
     this.leave(null, true);
@@ -184,11 +218,18 @@ export class NetSession {
     this.fundraisers = [];
     this.pending = new Set(); // players whose fundraiser code is being checked
     this.lobby = {
-      code, kind, inMatch: false,
-      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
+      code, base: code, epoch: 0, kind, inMatch: false,
+      rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, arena: 'random', teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier), ...this.identity() }],
     };
-    if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
+    if (kind === 'queue') {
+      const Q = QUEUES[format] || QUEUES.brawl;
+      this.lobby.format = QUEUES[format] ? format : 'brawl';
+      Object.assign(this.lobby.rules, { mode: Q.mode, count: Q.fill, teams: Q.teams, winsNeeded: Q.wins, suddenDeath: Q.sudden });
+      if (Q.teams) this.lobby.rules.teamNames = ['Red', 'Blue'];
+      // ranked waits for an opponent however long it takes; the others count down
+      this.lobby.queue = Q.rated ? { left: null, since: Date.now() } : { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
+    }
     if (admin) {
       this.lobby.tournament = {
         name: cleanText(tournament?.name, 48) || 'Tournament', startsAt: String(tournament?.startsAt || '').slice(0, 32),
@@ -201,12 +242,16 @@ export class NetSession {
       this.fundraisers = tournament?.groups || [];
       this.systemChat(`${this.lobby.tournament.name} is open. Teams join with their ${this.lobby.tournament.registration === 'code' ? 'fundraiser code' : 'fundraising group'}; everyone else can watch.`);
     }
+    this.listenAsHost(transport);
+    this.onLobby();
+    return code;
+  }
+
+  listenAsHost(transport) {
     transport.onMessage = (id, msg, ch) => this.hostReceive(id, msg, ch);
     transport.onPeerJoin = (id) => { this.heard.set(id, performance.now()); };
     transport.onPeerLeave = (id) => this.dropPeer(id, 'left');
     this.pingTimer = setInterval(() => this.hostHousekeeping(), 1000);
-    this.onLobby();
-    return code;
   }
 
   hostReceive(id, msg, ch) {
@@ -215,6 +260,8 @@ export class NetSession {
     const member = this.lobby.members.find((m) => m.id === id);
     switch (msg.t) {
       case 'hello': {
+        // a player of the room we took over (see migrate()) coming back: they were let in before
+        if (msg.back && this.returning?.has(id) && member) { this.welcomeBack(id, member); return; }
         if (member || this.pending.has(id)) return;
         if (msg.v !== PROTOCOL) { this.reject(id, 'That room runs a different version of the game. Both players need the same file.'); return; }
         const tourney = this.kind === 'tournament';
@@ -260,6 +307,9 @@ export class NetSession {
       case 'chat':
         if (member) this.hostChat(member, msg.x);
         break;
+      case 'qc':
+        this.hostQuickChat(id, msg.i);
+        break;
       case 'bye':
         this.dropPeer(id, 'left');
         break;
@@ -269,8 +319,9 @@ export class NetSession {
   // Why nobody else can join right now, or null.
   closedReason() {
     if (this.kind === 'tournament') return this.lobby.members.length >= MAX_TOURNAMENT ? `That tournament is full (${MAX_TOURNAMENT} people).` : null;
-    if (this.lobby.members.length >= MAX_PLAYERS) return 'That battle is full (8 players).';
-    if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) return 'That battle already started.';
+    const max = this.queueRules?.max || MAX_PLAYERS;
+    if (this.lobby.members.length >= max) return max === 2 ? 'That ranked fight already has two players.' : `That battle is full (${max} players).`;
+    if (this.kind === 'queue' && (this.lobby.inMatch || (this.lobby.queue.left != null && this.lobby.queue.left <= 0))) return 'That battle already started.';
     return null;
   }
 
@@ -285,8 +336,8 @@ export class NetSession {
     for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
     const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
     // reward: the cosmetic their fundraising group earned by reaching its goal (fundraiser.js)
-    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
-    if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
+    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward), ...cleanIdentity(msg) });
+    if (!tourney && !this.queueRules?.teams) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
     this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
     if (tourney) {
       this.transport.send(id, { t: 'chatlog', l: this.chat });
@@ -320,33 +371,45 @@ export class NetSession {
     if (!this.lobby.inMatch) this.transport.broadcast({ t: 'ping' });
     // the queue counts down, then everyone in it fights (also when the battle fills up)
     const q = this.lobby.queue;
-    if (q && !this.lobby.inMatch && q.left > 0) {
+    const Q = this.queueRules;
+    if (q && !this.lobby.inMatch && Q?.rated) {
+      // ranked: once an opponent is here, a short lead-in and the fight; if they leave first, keep searching
+      const full = this.lobby.members.length >= Q.max;
+      if (full && q.left == null) q.ends = now + RANKED_LEAD * 1000;
+      if (!full) { q.left = null; this.broadcastLobby(); }
+      else {
+        q.left = Math.max(0, Math.ceil((q.ends - now) / 1000));
+        if (q.left <= 0) { this.beacon?.release(); this.beacon = null; this.startMatch(); } else this.broadcastLobby();
+      }
+    } else if (q && !this.lobby.inMatch && q.left > 0) {
       q.left = Math.max(0, Math.ceil((q.ends - now) / 1000));
-      if (this.lobby.members.length >= MAX_PLAYERS) q.left = 0;
+      if (this.lobby.members.length >= (Q?.max || MAX_PLAYERS)) q.left = 0;
       if (q.left <= 0) { this.beacon?.release(); this.beacon = null; this.startMatch(); } else this.broadcastLobby();
     }
   }
 
   // ---------------------------------------------------------------- the online queue
   // Joins the open queue, or opens one when nobody else has. Resolves to 'host' or 'client'.
-  async queue() {
+  async queue(format = 'brawl') {
     this.leave(null, true);
-    const name = `queue-v${PROTOCOL}`;
+    if (!QUEUES[format]) format = 'brawl';
+    const name = `${QUEUES[format].beacon}-v${PROTOCOL}`;
     let lastErr = null;
     for (let attempt = 0; attempt < 4; attempt++) {
       const beacon = createBeacon();
       try {
         await beacon.claim(name);
         this.beacon = beacon;
-        try { await this.host({ kind: 'queue', keepBeacon: true }); } catch (err) { this.beacon?.release(); this.beacon = null; throw err; }
-        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue?.left ?? 0 });
+        try { await this.host({ kind: 'queue', keepBeacon: true, format }); } catch (err) { this.beacon?.release(); this.beacon = null; throw err; }
+        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue ? this.lobby.queue.left : 0 });
         return 'host';
       } catch (err) {
         if (err.kind !== 'taken') throw err;
       }
       try {
         const info = await beacon.ask(name);
-        if (info?.code && info.left > 2) { await this.join(info.code); return 'client'; }
+        // (a ranked host still searching reports no countdown at all)
+        if (info?.code && (info.left === null || info.left > 2)) { await this.join(info.code); return 'client'; }
         lastErr = new TransportError('busy', 'A battle is just starting. Queue again in a moment.');
         await sleep(Math.min(5000, ((info?.left || 0) + 1.5) * 1000));
       } catch (err) {
@@ -381,6 +444,23 @@ export class NetSession {
     if (!this.connected || this.kind !== 'tournament') return;
     if (this.isHost) this.hostChat(this.me, text);
     else this.transport.sendHost({ t: 'chat', x: cleanText(text, 200) });
+  }
+
+  // ---------------------------------------------------------------- quick chat (any online match)
+  // A fixed line (social.js QUICK_CHAT) over your fighter's head. The host checks it is a player
+  // in this match and not flooding, then tells everyone.
+  sendQuickChat(i) {
+    if (!this.connected || !this.lobby?.inMatch || cleanChat(i) < 0) return;
+    if (this.isHost) this.hostQuickChat('host', i);
+    else this.transport.sendHost({ t: 'qc', i });
+  }
+
+  hostQuickChat(id, i) {
+    if (!this.lobby?.inMatch || cleanChat(i) < 0) return;
+    const slot = this.spec?.fighters.findIndex((f) => f.owner === id) ?? -1;
+    if (slot < 0 || !this.chatGate.allow(id)) return;
+    this.transport.broadcast({ t: 'qc', s: slot, i });
+    this.onQuickChat(slot, i);
   }
 
   // ---------------------------------------------------------------- tournaments (host = admin)
@@ -481,11 +561,18 @@ export class NetSession {
   dropPeer(id, why) {
     this.heard.delete(id);
     this.pending?.delete(id);
+    this.returning?.delete(id);
     this.transport?.kick(id);
     const i = this.lobby.members.findIndex((m) => m.id === id);
     if (i < 0) return;
     const [m] = this.lobby.members.splice(i, 1);
-    if (this.lobby.inMatch) {
+    if (this.lobby.inMatch && this.queueRules?.rated) {
+      // ranked: leaving forfeits. The leaver's fighter falls and whoever stayed wins the match.
+      const slot = this.spec.fighters.findIndex((f) => f.owner === id);
+      this.forfeit(slot);
+      this.controllers?.delete(id);
+      this.game.hud.feed(`<b style="color:${ONLINE_COLORS[m.color]}">${escHtml(m.name)}</b> <span>${why === 'left' ? 'left' : 'lost connection'} and forfeits</span>`);
+    } else if (this.lobby.inMatch) {
       // a CPU takes the seat so the match carries on
       const slot = this.spec.fighters.findIndex((f) => f.owner === id);
       const f = this.game.fighters[slot];
@@ -497,6 +584,22 @@ export class NetSession {
       this.game.hud.feed(`<b style="color:${ONLINE_COLORS[m.color]}">${escHtml(m.name)}</b> <span>${why === 'left' ? 'left' : 'lost connection'}, a CPU takes over</span>`);
     }
     this.broadcastLobby();
+  }
+
+  // Ranked forfeit: the fighter in `slot` is knocked out and the other one is given the rounds still needed.
+  forfeit(slot) {
+    const g = this.game;
+    const quitter = g.fighters[slot];
+    if (!quitter || g.phase === 'matchOver') return;
+    quitter.controller = null;
+    this.spec.fighters[slot].owner = null;
+    this.spec.forfeit = slot;
+    const other = g.fighters.find((f) => f !== quitter);
+    if (other) other.stats.wins = Math.max(other.stats.wins, g.setup.winsNeeded - 1);
+    if (g.phase === 'roundOver') { if (other) other.stats.wins = g.setup.winsNeeded; return; }
+    quitter.invuln = 0;
+    if (quitter.alive) quitter.applyDamage(quitter.hp + 1, null, g, true);
+    if (g.phase === 'intro') { g.phase = 'fight'; g.locked = false; }
   }
 
   broadcastLobby(extra = {}) {
@@ -511,6 +614,7 @@ export class NetSession {
     if (key === 'wins') r.winsNeeded = Math.min(5, Math.max(1, r.winsNeeded + d));
     if (key === 'diff') r.difficulty = cyc(['easy', 'normal', 'hard', 'brutal'], r.difficulty);
     if (key === 'sudden') r.suddenDeath = cyc([0, 45, 60, 75, 90, 120], r.suddenDeath);
+    if (key === 'arena') r.arena = cyc(ARENA_CHOICES, r.arena || 'random');
     if (key === 'teams') {
       r.teams = cyc(TEAM_COUNTS, r.teams);
       if (r.teams) this.lobby.members.forEach((m, i) => { if (!(m.team < r.teams)) m.team = i % r.teams; });
@@ -583,7 +687,9 @@ export class NetSession {
       fighters.push(cpu);
     }
     const teams = { count: tc, names: rules.teamNames.slice(0, tc).map((n, i) => cleanTeamName(n, i)) };
-    this.launch({ setup: { mode: rules.mode || 'queue', winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
+    // hazard arenas for free-for-all brawls and private rooms; hill, duo and ranked stay on the coliseum
+    const fixed = rules.mode === 'hill' || (this.format && this.format !== 'brawl');
+    this.launch({ setup: { mode: rules.mode || 'queue', map: fixed ? 'coliseum' : pickArena(rules.arena), winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
   }
 
   // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team, reward }], label?, watchHint? }.
@@ -677,9 +783,26 @@ export class NetSession {
         // gear: weapon, its hits left, armor points, selected bar slot, then [item, charges] pairs
         f.weapon ? WEAPON_IDS.indexOf(f.weapon) : -1, f.weaponHits, Math.round(f.plate), f.sel,
         f.items.flatMap((it) => [SKILL_IDS.indexOf(it.id), it.charges]),
+        r2(f.vel.x), r2(f.vel.y), r2(f.vel.z),
+        f.state === 'emote' ? EMOTE_IDS.indexOf(f.emoteId) : -1,
       ]),
+      // the last input the host applied for each remote player, so their own prediction can check itself
+      a: g.fighters.map((f) => (f.controller instanceof NetController ? f.controller.seq : -1)),
+      ah: g.fighters.map((f) => (f.controller instanceof NetController && f.controller.from != null ? Math.round((g.time - f.controller.from + SIM_DT) * 1000) / 1000 : 0)),
+      ...(this.snapSeq % DEEP_EVERY === 0 ? { d: this.deepState() } : {}),
       pu: g.pickups.state(),
+      hl: g.hill.active ? g.hill.state() : null,
       p: g.projectiles.filter((p) => !p.dead).map((p) => [p.id, PROJ_KINDS.indexOf(p.kind), r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.dir.x), r2(p.dir.z), p.owner.slot]),
+    };
+  }
+
+  // Timers and meters the snapshots leave out, which a guest needs if it ever has to take over hosting.
+  deepState() {
+    const g = this.game;
+    return {
+      pt: r2(g.phaseTime),
+      f: g.fighters.map((f) => [f.armor, f.power, f.lifesteal, f.vanish, f.haste, f.slow, f.shieldTime, f.poison,
+        f.guard, f.healLeft, f.healRate, f.staminaDelay, f.guardRegenDelay].map(r2)),
     };
   }
 
@@ -695,19 +818,9 @@ export class NetSession {
       this.pendingJoin = { resolve, reject };
       setTimeout(() => reject(new TransportError('timeout', 'The host did not let us in. Try again.')), 10000);
     });
-    transport.onMessage = (id, msg) => this.clientReceive(msg);
-    transport.onHostLost = () => this.leave('Lost the connection to the host.');
     this.chat = [];
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
-    this.hostHeard = performance.now();
-    let lastTick = performance.now();
-    this.pingTimer = setInterval(() => {
-      const now = performance.now();
-      if (now - lastTick > 5000) this.hostHeard = now; // our tab stalled; the host's messages are still queued
-      lastTick = now;
-      transport.sendHost({ t: 'ping' });
-      if (now - this.hostHeard > PEER_TIMEOUT) this.leave('Lost the connection to the host.');
-    }, 2000);
+    this.listenAsClient(transport);
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode, ...this.identity() });
     try {
       await welcome;
     } catch (err) {
@@ -718,6 +831,22 @@ export class NetSession {
     }
   }
 
+  listenAsClient(transport) {
+    transport.onMessage = (id, msg) => this.clientReceive(msg);
+    transport.onHostLost = () => this.hostGone();
+    this.hostHeard = performance.now();
+    let lastTick = performance.now();
+    clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      const now = performance.now();
+      if (now - lastTick > 3000) this.hostHeard = now; // our tab stalled; the host's messages are still queued
+      lastTick = now;
+      transport.sendHost({ t: 'ping' });
+      // mid-match the host sends 30 snapshots a second, so silence means it is gone
+      if (now - this.hostHeard > (this.game.online === 'client' && this.snaps ? HOST_TIMEOUT : PEER_TIMEOUT)) this.hostGone();
+    }, 1000);
+  }
+
   clientReceive(msg) {
     this.hostHeard = performance.now();
     switch (msg.t) {
@@ -726,6 +855,16 @@ export class NetSession {
         this.lobby = msg.lobby;
         this.pendingJoin?.resolve();
         this.onLobby();
+        break;
+      case 'resume':
+        // the new host carries on the match we were in: its clock and snapshot numbers start afresh
+        if (msg.spec?.fighters?.length === this.spec?.fighters?.length) this.spec = msg.spec;
+        if (this.fxQueue) for (const q of this.fxQueue.splice(0)) this.playFx(q.item);
+        if (this.snaps) this.snaps = this.snaps.slice(-1);
+        this.clockOffset = null;
+        this.lastSeq = 0;
+        this.resumedAt = performance.now();
+        this.predictor?.pause(false);
         break;
       case 'reject':
         if (this.pendingJoin) this.pendingJoin.reject(new TransportError('rejected', msg.reason || 'The host turned us away.'));
@@ -746,6 +885,9 @@ export class NetSession {
       case 'fx':
         if (Array.isArray(msg.l)) for (const item of msg.l) this.fxQueue?.push({ ht: msg.ht, item });
         break;
+      case 'qc':
+        if (Number.isInteger(msg.s) && cleanChat(msg.i) >= 0) this.onQuickChat(msg.s, msg.i);
+        break;
       case 'chatlog':
         if (Array.isArray(msg.l)) { this.chat = msg.l.slice(-CHAT_KEEP); this.onChat(null); }
         break;
@@ -760,7 +902,9 @@ export class NetSession {
         this.onAccount(msg);
         break;
       case 'bye':
-        this.leave('The host closed the room.');
+        // a host who closes their room in the lobby closes it for everyone; otherwise the room moves on
+        if (this.lobby?.inMatch || this.kind === 'queue') this.hostGone();
+        else this.leave('The host closed the room.');
         break;
     }
   }
@@ -776,10 +920,12 @@ export class NetSession {
     this.lastRound = -1;
     this.lastPhase = -1;
     this.clientProjectiles = new Map();
-    this.input = { ctl: new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active), counts: NET_TAPS.map(() => 0), seq: 0, acc: 1 };
+    this.input = { ctl: new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active), counts: NET_TAPS.map(() => 0), seq: 0, acc: 1, emotes: 0, emote: -1 };
     this.game.net = this;
     this.menus.hideAll();
     this.game.startOnline(spec, 'client', null, you, this.bindings);
+    this.latest = null;
+    this.predictor = this.game.localFighter && !this.noPredict ? new Predictor(this.game, this.game.localFighter, { states: STATES, moves: MOVE_NAMES }) : null;
     this.onMatchStart();
   }
 
@@ -791,15 +937,25 @@ export class NetSession {
     // track the fastest-arriving packets; drift slowly so the clock follows the host
     if (this.clockOffset === null || offset > this.clockOffset) this.clockOffset = offset;
     else this.clockOffset += (offset - this.clockOffset) * 0.01;
+    if (this.resumedAt) {
+      // the old host's last snapshot is on another clock: line it up just before the new host's first
+      this.resumedAt = 0;
+      this.snaps = this.snaps.slice(-1).map((old) => ({ ...old, ht: s.ht - 1 / SNAP_HZ }));
+    }
     this.snaps.push(s);
     if (this.snaps.length > 40) this.snaps.splice(0, this.snaps.length - 40);
+    this.latest = s;
+    if (s.d) this.deep = s.d;
   }
 
   clientStep(dt) {
     const g = this.game;
     g.time += dt;
-    this.sendInput(dt);
+    const it = this.sendInput(dt);
+    const P = this.predictor;
     if (!this.snaps?.length) { for (const f of g.fighters) f.syncVisual(0, g); return; }
+    // our own fighter runs ahead of the snapshots while it is free to act (predict.js)
+    const ahead = !!P && P.update(this.latest);
     const renderT = performance.now() / 1000 + this.clockOffset - INTERP_DELAY;
     let a = this.snaps[0], b = a;
     for (let i = this.snaps.length - 1; i >= 0; i--) {
@@ -807,26 +963,35 @@ export class NetSession {
     }
     if (this.snaps.length > 2) this.snaps.splice(0, Math.max(0, this.snaps.indexOf(a) - 1));
     const t = b === a ? 0 : Math.min(1, Math.max(0, (renderT - a.ht) / (b.ht - a.ht)));
-    this.applySnap(a, b, t, dt);
+    this.applySnap(a, b, t, dt, ahead ? P.f.slot : -1);
+    if (P) {
+      if (ahead && it) P.simulate(dt, it, this.input.seq);
+      P.afterDraw(dt);
+    }
     // effects and events whose moment has come
     while (this.fxQueue.length && this.fxQueue[0].ht <= renderT + 0.001) this.playFx(this.fxQueue.shift().item);
     if (this.fxQueue.length > 400) for (const q of this.fxQueue.splice(0, this.fxQueue.length - 400)) this.playFx(q.item);
   }
 
+  // Sends this frame's input to the host (at most INPUT_HZ times a second, at once on a tap) and returns it.
   sendInput(dt) {
     const me = this.game.localFighter;
-    if (!me) return;
+    if (!me) return null;
     const inp = this.input;
     const it = inp.ctl.getIntent(me, this.game);
     let tapped = false;
     NET_TAPS.forEach((a, i) => { if (it[a]) { inp.counts[i]++; tapped = true; } });
+    if (it.emote && EMOTE_IDS.includes(it.emote)) { inp.emotes++; inp.emote = EMOTE_IDS.indexOf(it.emote); tapped = true; }
     inp.acc += dt;
-    if (!tapped && inp.acc < 1 / INPUT_HZ) return;
+    if (!tapped && inp.acc < 1 / INPUT_HZ) return it;
     inp.acc = 0;
-    this.transport.sendHost({ t: 'in', s: ++inp.seq, mx: r2(it.mx), mz: r2(it.mz), b: it.block ? 1 : 0, d: it.dashHeld ? 1 : 0, c: inp.counts }, 'rt');
+    this.transport.sendHost({ t: 'in', s: ++inp.seq, mx: r2(it.mx), mz: r2(it.mz), b: it.block ? 1 : 0, d: it.dashHeld ? 1 : 0, c: inp.counts, e: [inp.emotes, inp.emote] }, 'rt');
+    return it;
   }
 
-  applySnap(a, b, t, dt) {
+  // Draws the match between snapshots a and b. `own` is the slot our prediction is drawing
+  // (its position, motion and state are left alone; its meters still come from the host).
+  applySnap(a, b, t, dt, own = -1) {
     const g = this.game;
     const ph = PHASES[a.ph] || 'fight';
     if (a.r !== this.lastRound) {
@@ -849,26 +1014,32 @@ export class NetSession {
       const fa = a.f[i], fb = b.f[i] || fa;
       if (!fa) return;
       const sameState = fa[4] === fb[4];
-      f.animTime += dt;
-      f.pos.set(lerp(fa[0], fb[0], t), lerp(fa[1], fb[1], t), lerp(fa[2], fb[2], t));
-      f.facing = lerpAngle(fa[3], fb[3], t);
-      f.state = STATES[fa[4]] || 'idle';
-      f.stateTime = sameState ? lerp(fa[5], fb[5], t) : fa[5];
-      f.stateDuration = fa[6];
+      const mine = i === own;
+      if (!mine) {
+        f.animTime += dt;
+        f.pos.set(lerp(fa[0], fb[0], t), lerp(fa[1], fb[1], t), lerp(fa[2], fb[2], t));
+        f.vel.set(num(fa[35]), num(fa[36]), num(fa[37]));
+        f.facing = lerpAngle(fa[3], fb[3], t);
+        f.state = STATES[fa[4]] || 'idle';
+        f.stateTime = sameState ? lerp(fa[5], fb[5], t) : fa[5];
+        f.stateDuration = fa[6];
+      }
       f.hp = sameState ? lerp(fa[7], fb[7], t) : fa[7];
       f.energy = fa[8];
       const flags = fa[9];
       f.alive = !!(flags & 1);
-      f.grounded = !!(flags & 2);
       f.model.ice.visible = !!(flags & 4);
       f.armor = flags & 8 ? 1 : 0;
-      f.moveName = MOVE_NAMES[fa[10]] || null;
-      f.move = f.moveName ? MOVES[f.moveName] : null;
-      f.attackPhase = sameState && fa[10] === fb[10] ? lerp(fa[11], fb[11], t) : fa[11];
-      f.attackSide = fa[12];
-      f.specialPhase = sameState ? lerp(fa[13], fb[13], t) : fa[13];
-      f.moveAmount = lerp(fa[14], fb[14], t);
-      f.runPhase = fb[15] >= fa[15] ? lerp(fa[15], fb[15], t) : fb[15];
+      if (!mine) {
+        f.grounded = !!(flags & 2);
+        f.moveName = MOVE_NAMES[fa[10]] || null;
+        f.move = f.moveName ? MOVES[f.moveName] : null;
+        f.attackPhase = sameState && fa[10] === fb[10] ? lerp(fa[11], fb[11], t) : fa[11];
+        f.attackSide = fa[12];
+        f.specialPhase = sameState ? lerp(fa[13], fb[13], t) : fa[13];
+        f.moveAmount = lerp(fa[14], fb[14], t);
+        f.runPhase = fb[15] >= fa[15] ? lerp(fa[15], fb[15], t) : fb[15];
+      }
       f.invuln = fa[16];
       f.stats.wins = fa[17]; f.stats.kos = fa[18]; f.stats.damage = fa[19];
       f.stamina = lerp(num(fa[20], 100), num(fb[20], 100), t);
@@ -882,7 +1053,7 @@ export class NetSession {
       f.exhausted = !!(buffs & 4);
       f.haste = buffs & 8 ? 1 : 0;
       f.slow = buffs & 16 ? 1 : 0;
-      f.sprinting = !!(buffs & 32);
+      if (!mine) f.sprinting = !!(buffs & 32);
       f.downed = num(fa[27]);
       f.reviveProgress = num(fa[28]);
       if (fa[29] > 0) f.maxHp = fa[29];
@@ -896,11 +1067,13 @@ export class NetSession {
         const id = SKILL_IDS[items[k]];
         if (SKILLS[id]?.item) f.items.push({ id, charges: num(items[k + 1]) });
       }
+      f.emoteId = EMOTE_IDS[fa[38]] || null;
       if (f.alive) f.model.ring.visible = true;
       f.updateBuffVisuals();
-      f.syncVisual(flags & 16 ? 0 : dt, g);
+      if (!mine) f.syncVisual(flags & 16 ? 0 : dt, g);
     });
     g.pickups.applyState(a.pu);
+    if (a.hl) g.hill.applyState(a.hl);
     // projectiles: create, move and retire to match the host
     const live = new Set();
     const prev = new Map((a.p || []).map((p) => [p[0], p]));
@@ -937,6 +1110,8 @@ export class NetSession {
       else if (tag === 'v' && SYNC_EVENTS.includes(name)) {
         const data = {};
         for (const [k, v] of Object.entries(args[0] || {})) data[k] = v && typeof v === 'object' ? (g.fighters[v.$f] || null) : v;
+        // our own swings, jumps and dodges already played the moment we pressed the key
+        if (data.fighter && data.fighter === g.localFighter && this.predictor?.claim(name)) return;
         if (name === 'roundStart' || name === 'matchEnd') data.fighters = g.fighters;
         events.emit(name, data);
         if (name === 'matchEnd' && data.winner) {
@@ -947,9 +1122,216 @@ export class NetSession {
     } catch (err) { console.warn('[net] could not replay', item, err); }
   }
 
+  // ---------------------------------------------------------------- host migration
+  // When the host of a room or a queue battle leaves (or its connection dies), the match does not
+  // end: the first other player in the lobby hosts it from their last snapshot, under the room code
+  // plus "-1" (then "-2"…), and everyone else reconnects to them with the same link they had. If that
+  // player is gone too, the next one in line takes over. Tournaments stay with their admin.
+  hostGone() {
+    if (this.migrating || this.role !== 'client') return;
+    const L = this.lobby;
+    const over = this.game.phase === 'matchOver' && this.kind === 'queue'; // nothing left to save
+    if (!L || this.kind === 'tournament' || over || !L.members.some((m) => m.id === this.myId)) {
+      this.leave('Lost the connection to the host.');
+      return;
+    }
+    this.migrate();
+  }
+
+  async migrate() {
+    const token = this.migrating = {};
+    const L = this.lobby;
+    const old = this.transport;
+    clearInterval(this.pingTimer);
+    old.onMessage = () => {};
+    old.onHostLost = () => {};
+    this.predictor?.pause(true);
+    const gone = L.members.find((m) => m.id === 'host');
+    const epoch = (L.epoch || 0) + 1;
+    const code = `${L.base || L.code}-${epoch}`;
+    const line = L.members.filter((m) => m.id !== 'host');
+    this.migrateNote(`${gone ? `<b style="color:${ONLINE_COLORS[gone.color]}">${escHtml(gone.name)}</b>` : 'The host'} <span>left. Keeping the battle going…</span>`);
+    for (let i = 0; i < line.length; i++) {
+      if (this.migrating !== token) return;
+      if (line[i].id === this.myId) {
+        try { await this.takeOver(code, epoch, old); return; } catch (err) {
+          if (err.kind !== 'taken') break;
+          // someone already holds the new code: they are hosting, so join them instead
+        }
+        if (await this.rejoinHost(old, code, 6000, token)) return;
+      } else if (await this.rejoinHost(old, code, i === 0 ? 8000 : 5000, token)) return;
+    }
+    if (this.migrating !== token) return;
+    this.migrating = null;
+    this.leave('Lost the connection to the host.');
+  }
+
+  migrateNote(html) {
+    if (this.game.online) this.game.hud.feed(html);
+  }
+
+  // Keep knocking on the new host's door until it opens or `ms` runs out. True once we're back in.
+  async rejoinHost(transport, code, ms, token) {
+    const until = performance.now() + ms;
+    while (performance.now() < until && this.migrating === token) {
+      try {
+        await transport.rejoin(code, Math.max(1500, until - performance.now()));
+      } catch (err) {
+        await sleep(600);
+        continue;
+      }
+      if (this.migrating !== token) return false;
+      const back = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), 5000);
+        transport.onMessage = (id, msg) => {
+          if (msg.t === 'welcome') { clearTimeout(timer); resolve(true); }
+          if (msg.t === 'reject') { clearTimeout(timer); resolve(false); }
+          this.clientReceive(msg);
+        };
+        transport.sendHost({ t: 'hello', v: PROTOCOL, back: 1 });
+      });
+      if (this.migrating !== token) return false;
+      if (back) {
+        this.migrating = null;
+        this.listenAsClient(transport);
+        const host = this.lobby?.members.find((m) => m.id === 'host');
+        this.migrateNote(`<b style="color:${ONLINE_COLORS[host?.color] || '#ddd'}">${escHtml(host?.name || 'Someone')}</b> <span>is hosting now</span>`);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // We are next in line: host the room from here, starting from the newest snapshot.
+  async takeOver(code, epoch, old) {
+    const transport = createTransport();
+    await transport.host(code);
+    const L = this.lobby;
+    const oldId = this.myId;
+    this.migrating = null;
+    setTimeout(() => old.close(), 200);
+    this.transport = transport;
+    this.role = 'host';
+    this.myId = 'host';
+    L.code = code;
+    L.epoch = epoch;
+    const me = L.members.find((m) => m.id === oldId);
+    const others = L.members.filter((m) => m.id !== 'host' && m !== me);
+    me.id = 'host';
+    L.members = [me, ...others];
+    const now = performance.now();
+    // the rest of the room gets a few seconds to reconnect before a CPU takes their place
+    this.heard = new Map(others.map((m) => [m.id, now - PEER_TIMEOUT + RETURN_GRACE]));
+    this.returning = new Set(others.map((m) => m.id));
+    this.chat = [];
+    this.chatAt = new Map();
+    this.fundraisers = [];
+    this.pending = new Set();
+    this.lastHousekeeping = now;
+    const q = L.queue;
+    if (q && q.left != null) q.ends = now + q.left * 1000;
+    // ranked: the host leaving mid-match forfeits it, like anyone else leaving
+    const hostSlot = L.inMatch && this.queueRules?.rated ? this.spec.fighters.findIndex((f) => f.owner === 'host') : -1;
+    this.listenAsHost(transport);
+    if (L.inMatch) this.resumeAsHost(oldId);
+    if (hostSlot >= 0) this.forfeit(hostSlot);
+    // the queue's beacon (the name new players look for) left with the old host: claim it back if free
+    if (q && !L.inMatch && (q.left === null || q.left > 0)) {
+      const beacon = createBeacon();
+      beacon.claim(`${(this.queueRules || QUEUES.brawl).beacon}-v${PROTOCOL}`).then(() => {
+        if (this.lobby !== L || !this.isHost) { beacon.release(); return; }
+        this.beacon = beacon;
+        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue ? this.lobby.queue.left : 0 });
+      }, () => {});
+    }
+    this.migrateNote('<b>You</b> <span>are hosting now</span>');
+    this.broadcastLobby();
+  }
+
+  welcomeBack(id, member) {
+    this.returning.delete(id);
+    this.heard.set(id, performance.now());
+    this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
+    if (this.lobby.inMatch) this.transport.send(id, { t: 'resume', spec: this.spec });
+    this.broadcastLobby();
+    if (this.lobby.inMatch) this.game.hud.feed(`<b style="color:${ONLINE_COLORS[member.color]}">${escHtml(member.name)}</b> <span>is back</span>`);
+  }
+
+  // Turn this guest's view of the match into the real simulation and carry on hosting it.
+  resumeAsHost(oldId) {
+    const g = this.game;
+    const L = this.lobby;
+    const spec = this.spec;
+    const present = new Set(L.members.map((m) => m.id));
+    for (const f of spec.fighters) {
+      if (f.owner === oldId) f.owner = 'host';
+      else if (f.owner && (f.owner === 'host' || !present.has(f.owner))) f.owner = null; // the old host's fighter goes to a CPU
+    }
+    this.controllers = new Map();
+    const ctrls = spec.fighters.map((f, i) => {
+      if (f.owner === 'host') return new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active);
+      if (f.owner) { const c = new NetController(i); this.controllers.set(f.owner, c); return c; }
+      return new AIController(spec.setup.difficulty || L.rules.difficulty);
+    });
+    // anything still waiting to be shown happens now
+    if (this.fxQueue) for (const q of this.fxQueue.splice(0)) this.playFx(q.item);
+    const last = this.snaps?.[this.snaps.length - 1] || this.latest;
+    const deep = this.deep;
+    if (this.clientProjectiles) { for (const p of this.clientProjectiles.values()) p.dispose(g); this.clientProjectiles.clear(); }
+    this.predictor = null;
+    this.snaps = null;
+    this.fxQueue = null;
+    g.online = 'host';
+    g.fighters.forEach((f, i) => { f.controller = ctrls[i]; });
+    g.projectiles = [];
+    g.delayed = [];
+    g.acc = 0;
+    g.slowmo = 0;
+    g.timeScale = 1;
+    if (!last) {
+      g.round = 0;
+      g.beginRound(false);
+    } else {
+      this.applySnap(last, last, 0, 0);
+      g.phase = PHASES[last.ph] || 'fight';
+      g.phaseTime = deep?.pt ?? 0;
+      g.locked = g.phase !== 'fight';
+      g.roundWinner = g.fighters[last.w] || null;
+      g.ringRadius = num(last.rr, 99);
+      if (g.teamMode) g.teamsAlive = new Set(g.fighters.filter((f) => f.alive).map((f) => f.team));
+      g.pickups.enabled = !!g.rules.powerups;
+      g.pickups.group.visible = g.pickups.enabled;
+      g.fighters.forEach((f, i) => {
+        const d = deep?.f?.[i];
+        if (d) [f.armor, f.power, f.lifesteal, f.vanish, f.haste, f.slow, f.shieldTime, f.poison, f.guard, f.healLeft, f.healRate, f.staminaDelay, f.guardRegenDelay] = d.map((v) => num(v));
+        const sf = last.f[i];
+        f.vel.set(num(sf[35]), num(sf[36]), num(sf[37]));
+        f.stateTime = num(sf[5]);
+        f.hitstop = 0;
+        f.buffer = null;
+        f.hitSet = new Set();
+        f.landTime = 0;
+        f.specialDone = f.specialPhase >= 1;
+        if (f.state === 'dodge') {
+          const v = Math.hypot(f.vel.x, f.vel.z);
+          f.dodgeDir = v > 0.1 ? { x: f.vel.x / v, z: f.vel.z / v } : { x: -Math.sin(f.facing), z: -Math.cos(f.facing) };
+        }
+        if (f.state === 'attack' && !f.move) f.setState('idle');
+        if (f.state === 'skill' && !f.skill) f.setState('idle');
+        f.syncVisual(0, g);
+      });
+    }
+    this.unhookAll();
+    this.installHostHooks();
+    this.snapAcc = 1;
+    this.snapSeq = 0;
+  }
+
   // ---------------------------------------------------------------- shared
   endMatchLocally() {
     this.unhookAll();
+    this.predictor = null;
+    this.latest = null;
     if (this.clientProjectiles) { for (const p of this.clientProjectiles.values()) p.dispose(this.game); this.clientProjectiles.clear(); }
     this.snaps = null;
     this.fxQueue = null;
@@ -965,6 +1347,8 @@ export class NetSession {
   leave(reason = null, quiet = false) {
     this.beacon?.release();
     this.beacon = null;
+    this.migrating = null;
+    this.returning = null;
     if (!this.role) return;
     try {
       if (this.isHost) this.transport.broadcast({ t: 'bye' });
@@ -985,6 +1369,15 @@ export class NetSession {
     this.game.net = null;
     if (!quiet) this.onLeft(reason);
   }
+}
+
+// Site handle and rating a player sends with their hello, for the ranked lobby (display only: the
+// website keeps the real ratings).
+function cleanIdentity(msg) {
+  const out = {};
+  if (typeof msg?.handle === 'string') out.handle = msg.handle.replace(/[\u0000-\u001f<>]/g, '').slice(0, 20);
+  if (Number.isFinite(msg?.rating)) out.rating = Math.round(Math.min(4000, Math.max(0, msg.rating)));
+  return out;
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

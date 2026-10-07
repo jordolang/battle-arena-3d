@@ -1,9 +1,12 @@
 // Game orchestration: renderer, fixed-step simulation, rounds and match flow.
 import * as THREE from 'three';
-import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, cleanTeamName, modeRules } from './config.js';
+import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, HILL, ARENAS, cleanTeamName, modeRules, pickArena } from './config.js';
 import { events } from './events.js';
 import { Arena } from './arena.js';
 import { Badlands } from './battleground.js';
+import { SkyBridge } from './bridge.js';
+import { Foundry } from './foundry.js';
+import { StormPeak } from './stormpeak.js';
 import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
@@ -12,7 +15,11 @@ import { AIController, DummyController } from './ai.js';
 import { HumanController, devices } from './input.js';
 import { Hud } from './hud.js';
 import { Replay } from './replay.js';
+import { Hill } from './hill.js';
 import { wardrobe, randomLook } from './cosmetics.js';
+import { QualityGovernor, isHandheld } from './perf.js';
+
+const ARENA_TYPES = { coliseum: Arena, badlands: Badlands, bridge: SkyBridge, foundry: Foundry, storm: StormPeak };
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -24,22 +31,22 @@ export class Game {
     this.events = events;
     this.quality = quality;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // phones with dense screens skip MSAA: at 2-3x pixel density the edges are already fine and it costs fill rate
+    const antialias = !(quality === 'auto' && isHandheld() && (window.devicePixelRatio || 1) >= 2);
+    this.renderer = new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
-    this.renderer.shadowMap.enabled = quality !== 'low';
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.maxPixelRatio = quality === 'low' ? 1 : quality === 'high' ? 2 : 1.6;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
+    this.perf = new QualityGovernor(this, quality);
+    this.pixelRatio = this.perf.pixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     stage.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.rig = new CameraRig(1);
-    this.arenaQuality = quality === 'auto' ? 'high' : quality;
-    this.arenas = { coliseum: new Arena(this.scene, this.arenaQuality) };
+    this.arenas = { coliseum: new Arena(this.scene, 'high') };
     this.arena = this.arenas.coliseum;
+    this.perf.apply();
     this.effects = new Effects(this.scene);
     this.pickups = new Pickups(this);
     this.pickups.setPads(this.arena.pads);
@@ -48,6 +55,7 @@ export class Game {
     this.reviveOn = false;
     this.hud = new Hud(hudRoot);
     this.replay = new Replay(this);
+    this.hill = new Hill(this);
 
     // world state read by fighters, AI and specials
     this.fighters = [];
@@ -71,8 +79,8 @@ export class Game {
     this.setup = null;
     this.onMatchEnd = null;
     this.frameMs = 16;
-    this.perfTimer = 0;
     this.errors = 0;
+    this.demos = 0;
     this.fastForward = false;
     this.debugSpeed = 1;
     this.online = null;       // null | 'host' | 'client'
@@ -111,9 +119,10 @@ export class Game {
       this.effects.ring(fighter.pos.x, 0.1, fighter.pos.z, fighter.def.eyes, 3.2, 0.6);
       if (this.mode !== 'match') return;
       const v = nameTag(fighter);
-      const k = by ? nameTag(by) : '<b class="fire">The flames</b>';
-      const verb = by && allies(by, fighter) ? 'betrayed' : fighter.downed > 0 ? 'downed' : 'defeated';
-      this.hud.feed(`${k} <span>${verb}</span> ${v}${fighter.downed > 0 ? ' <span>· a teammate can revive</span>' : ''}`);
+      const k = by ? nameTag(by) : `<b class="fire">${fighter.diedTo || 'The flames'}</b>`;
+      const fell = by && fighter.diedTo === 'The fall';
+      const verb = by && allies(by, fighter) ? 'betrayed' : fell ? 'knocked' : fighter.downed > 0 ? 'downed' : 'defeated';
+      this.hud.feed(`${k} <span>${verb}</span> ${v}${fell ? ' <span>into the chasm</span>' : ''}${fighter.downed > 0 ? ' <span>· a teammate can revive</span>' : ''}`);
       flashScreen();
     });
     events.on('backstab', ({ fighter, by, quiet }) => {
@@ -146,14 +155,15 @@ export class Game {
 
   shake(a) { this.rig.shake(a); }
 
-  // Swaps the battleground: the coliseum for quick fights, the much larger Badlands for tournaments.
+  // Swaps the battleground (ARENAS in config.js). Each one is built the first time it is needed.
   useArena(name) {
-    this.rig.maxDistance = name === 'badlands' ? 50 : 36;
+    if (!ARENA_TYPES[name]) name = 'coliseum';
     if (!this.arenas[name]) {
-      this.arenas[name] = new Badlands(this.scene, this.arenaQuality);
-      this.arenas[name].moon.castShadow = this.renderer.shadowMap.enabled;
+      this.arenas[name] = new ARENA_TYPES[name](this.scene, 'high');
+      this.perf.applyLight(this.arenas[name].moon);
     }
     const next = this.arenas[name];
+    this.rig.maxDistance = name === 'badlands' ? 50 : next.camDistance || 36;
     for (const a of Object.values(this.arenas)) if (a !== next) a.show(false);
     next.show(true);
     if (this.arena !== next) {
@@ -166,6 +176,8 @@ export class Game {
   // Mode rules (MODES in config.js) for the match about to start.
   applyRules(setup) {
     this.rules = { ...modeRules(setup?.mode || 'cpu'), ...(setup?.rules || {}) };
+    // a chosen arena (or 'random') overrides the mode's usual one; online hosts send a concrete name
+    if (setup?.map) this.rules.map = ARENAS[setup.map] ? setup.map : pickArena('random');
     this.useArena(this.rules.map);
     this.friendlyFire = !!this.rules.friendlyFire;
     this.reviveOn = !!this.rules.revive;
@@ -231,7 +243,8 @@ export class Game {
     this.hud.show(false);
     this.rig.mode = 'orbit';
     this.rig.follow = null;
-    this.applyRules({ mode: 'cpu' });
+    // the first demo is the coliseum (already built); later ones tour the other arenas
+    this.applyRules({ mode: 'cpu', map: this.demos++ ? 'random' : 'coliseum' });
     const ids = [...ROSTER.keys()].sort(() => Math.random() - 0.5).slice(0, 6);
     this.fighters = ids.map((i, k) => new Fighter(ROSTER[i], k, new AIController('normal'), randomLook()));
     for (const f of this.fighters) this.scene.add(f.model.root);
@@ -257,8 +270,10 @@ export class Game {
       // people wear what they picked in the wardrobe, CPUs and the practice dummy dress themselves
       const look = s.look && typeof s.look === 'object' ? s.look
         : s.control === 'cpu' || s.control === 'dummy' ? randomLook() : wardrobe.lookFor(index);
-      const f = new Fighter(ROSTER[index], i, ctrl, look);
+      // a slot can bring its own fighter definition (the arcade boss is a giant version of a roster fighter)
+      const f = new Fighter(s.def || ROSTER[index], i, ctrl, look);
       if (ctrl.name) f.name = ctrl.name;
+      if (s.name) f.name = s.name;
       f.setReward(s.reward);
       return f;
     });
@@ -340,6 +355,7 @@ export class Game {
       this.rig.winner = null;
       this.arena.resetFireRing();
       this.pickups.reset(false);
+      this.hill.reset();
     }
   }
 
@@ -396,6 +412,7 @@ export class Game {
     const order = this.teamMode ? [...this.fighters].sort((a, b) => a.team - b.team || a.slot - b.slot) : this.fighters;
     const spots = this.arena.spawnPoints(order);
     order.forEach((f, i) => f.reset(new THREE.Vector3(spots[i].x, 0, spots[i].z), spots[i].facing));
+    this.hill.reset();
     if (this.mode === 'match') {
       this.rig.mode = 'fight';
       this.rig.winner = null;
@@ -422,7 +439,7 @@ export class Game {
     if (this.phase === 'fight') {
       this.fightTime += dt;
       const sd = this.setup.suddenDeath;
-      if (sd > 0 && this.fightTime > sd) {
+      if (sd > 0 && this.fightTime > sd && !this.hill.active) { // king of the hill has its own clock
         if (!this.suddenDeath) {
           this.suddenDeath = true;
           this.ringRadius = this.arena.radius + 0.6;
@@ -436,6 +453,7 @@ export class Game {
     for (const f of this.fighters) f.update(dt, this);
     this.resolveCollisions(dt);
     this.pickups.update(dt, this);
+    if (this.phase === 'fight') this.arena.hazards?.(dt, this);
     if (this.arena.zones.length && this.phase === 'fight') this.healZones(dt);
     if (this.reviveOn) this.tickRevives(dt);
 
@@ -449,7 +467,12 @@ export class Game {
       }
     }
 
-    if (this.phase === 'fight') {
+    if (this.phase === 'fight' && this.hill.active) {
+      // king of the hill: rounds end on points (or time), never on knockouts
+      const w = this.hill.tick(dt);
+      if (w !== undefined) this.endRound(w);
+      if (this.mode === 'match') this.onTick?.(dt);
+    } else if (this.phase === 'fight') {
       const alive = this.fighters.filter((f) => f.alive);
       if (this.teamMode) {
         const left = new Set(alive.map((f) => f.team));
@@ -584,6 +607,7 @@ export class Game {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
+    const rawDt = dt;
     if (dt > 0.1) dt = 0.1;
     this.frameMs = this.frameMs * 0.95 + dt * 1000 * 0.05;
 
@@ -592,9 +616,10 @@ export class Game {
         this.replay.step(dt);
       } else if (this.online === 'client') {
         this.net.clientStep(dt);
+        this.hill.animate(dt);
         this.pickups.animate(this.time);
         this.effects.update(dt);
-        this.arena.update(dt);
+        this.arena.update(dt, this);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
@@ -605,7 +630,7 @@ export class Game {
         if (this.slowmo > 0) { this.slowmo -= dt; this.timeScale = this.slowmo > 0 ? 0.3 : 1; }
         const humansAlive = this.fighters.some((f) => f.isHuman && f.alive);
         const anyHuman = this.fighters.some((f) => f.isHuman);
-        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive &&
+        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive && !this.hill.active &&
           (this.keyboard.isDown('KeyX') || !!devices.touch?.isDown('ff') || !!devices.pads?.anyDown('b0'));
         const scale = this.timeScale * (ff ? 3 : 1) * this.debugSpeed;
         this.acc += dt * scale;
@@ -614,8 +639,9 @@ export class Game {
         while (this.acc >= SIM_DT && steps < maxSteps) { this.tick(SIM_DT); this.acc -= SIM_DT; steps++; }
         if (steps >= maxSteps) this.acc = 0;
         this.effects.update(dt * scale);
+        this.hill.animate(dt);
         this.pickups.animate(this.time);
-        this.arena.update(dt * scale);
+        this.arena.update(dt * scale, this);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
@@ -625,9 +651,12 @@ export class Game {
         this.replay.record();
       }
       if (noRender) return;
-      this.renderer.render(this.scene, this.rig.camera);
+      // behind the fighter preview (its own 3D view) the scene is only a backdrop: half rate on the lower tiers
+      const covered = this.coveredBy?.() === 'select';
+      this.skipFrame = covered && this.perf.tier >= 2 && !this.skipFrame;
+      if (!this.skipFrame) this.renderer.render(this.scene, this.rig.camera);
       this.replay.afterRender(dt);
-      this.adaptQuality(dt);
+      this.perf.sample(rawDt, covered);
     } catch (err) {
       this.errors++;
       console.error('[game] frame error', err);
@@ -636,7 +665,11 @@ export class Game {
   }
 
   updateHud(dt, spectating) {
-    if (this.phase === 'fight' || this.phase === 'roundOver') {
+    if (this.hill.active) spectating = false; // knocked-out fighters are back in a moment
+    if ((this.phase === 'fight' || this.phase === 'roundOver') && this.hill.active) {
+      const left = Math.max(0, (this.rules.hillLimit || HILL.limit) - this.hill.time);
+      this.hud.setTimer(String(Math.ceil(left)), left < 10);
+    } else if (this.phase === 'fight' || this.phase === 'roundOver') {
       const sd = this.setup.suddenDeath;
       if (sd > 0) {
         const left = Math.max(0, sd - this.fightTime);
@@ -649,30 +682,14 @@ export class Game {
     this.hud.update(dt, this.rig.camera, this.width, this.height);
   }
 
-  adaptQuality(dt) {
-    if (this.quality !== 'auto') return;
-    this.perfTimer += dt;
-    if (this.perfTimer < 2.5) return;
-    this.perfTimer = 0;
-    const target = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
-    if (this.frameMs > 21 && this.pixelRatio > 0.6) {
-      this.pixelRatio = Math.max(0.6, this.pixelRatio - 0.2);
-      this.renderer.setPixelRatio(this.pixelRatio);
-      this.resize();
-      if (this.pixelRatio <= 0.8 && this.renderer.shadowMap.enabled && this.frameMs > 28) {
-        this.renderer.shadowMap.enabled = false;
-        this.arena.moon.castShadow = false;
-      }
-    } else if (this.frameMs < 13 && this.pixelRatio < target) {
-      this.pixelRatio = Math.min(target, this.pixelRatio + 0.1);
-      this.renderer.setPixelRatio(this.pixelRatio);
-      this.resize();
-    }
+  setQuality(q) {
+    this.quality = q;
+    this.perf.setMode(q);
   }
 
   stats() {
     return {
-      fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, phase: this.phase, round: this.round, mode: this.mode,
+      fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, quality: this.perf.stats(), phase: this.phase, round: this.round, mode: this.mode,
       rules: this.rules.mode, map: this.arena.name, pickups: this.pickups.state(),
       fighters: this.fighters.map((f) => ({ name: f.name, team: f.team, hp: Math.round(f.hp), maxHp: f.maxHp, alive: f.alive, downed: +f.downed.toFixed(1), wins: f.stats.wins, kos: f.stats.kos, state: f.state, weapon: f.weapon, plate: Math.round(f.plate), items: f.items.map((it) => `${it.id}x${it.charges}`) })),
       drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles,

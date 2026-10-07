@@ -4,7 +4,7 @@ import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { lookSummary } from '../cosmetics.js';
 import { shareOnFacebook } from '../share.js';
-import { ONLINE_COLORS, MAX_PLAYERS, QUEUES, cleanCode, cleanName, saveOnlineSettings } from './session.js';
+import { ONLINE_COLORS, MAX_PLAYERS, QUEUES, cleanCode, isRoomCode, cleanName, saveOnlineSettings } from './session.js';
 import { TEAM_COLORS as QUEUE_TEAM_COLORS, HILL } from '../config.js';
 import { isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
@@ -131,7 +131,7 @@ export class OnlineMenus {
       case 'net-join': {
         if (this.busy) return;
         const code = cleanCode(this.codeInput.value);
-        if (code.length !== 5) { this.setStatus('Type the 5-character room code from the host first.', true); this.codeInput.focus(); return; }
+        if (!isRoomCode(code)) { this.setStatus('Type the 5-character room code from the host first.', true); this.codeInput.focus(); return; }
         this.prepareName();
         this.busy = true;
         try {
@@ -406,7 +406,7 @@ export class OnlineMenus {
     if (el.dataset.mode === mode) return;
     el.dataset.mode = mode;
     el.innerHTML = s.isHost
-      ? '<button class="nav big primary" data-act="net-rematch">Rematch</button><button class="nav big" data-act="net-lobby">Back to the room</button><button class="nav big" data-act="net-leave">Close room</button>'
+      ? '<button class="nav big primary" data-act="net-rematch">Rematch</button><button class="nav big" data-act="net-lobby">Back to the room</button><button class="nav big" data-act="net-leave">Leave room</button>'
       : '<span class="waiting">The host picks a rematch or heads back to the room.</span><button class="nav big" data-act="net-leave">Leave room</button>';
     if (this.menus.active === 'results') el.querySelector('.nav')?.focus({ preventScroll: true });
   }

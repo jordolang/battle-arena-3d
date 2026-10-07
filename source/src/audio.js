@@ -294,6 +294,16 @@ export function initAudio(events, { getCamera } = {}) {
   for (const ev of ['specialFail', 'skillFail', 'dodgeFail']) {
     events.on(ev, ({ fighter }) => { if (isHuman(fighter)) play('fizzle', { fighter, gain: 0.5 }); });
   }
+  // arena hazards: slabs cracking and dropping, fire vents, the storm wall and its lightning
+  events.on('hazard', ({ kind, x, z }) => {
+    const at = { pos: new THREE.Vector3(x || 0, 0, z || 0) };
+    if (kind === 'crack') play('block', { fighter: at, gain: 0.45, rate: 0.55 });
+    else if (kind === 'collapse') { play('slam', { fighter: at, gain: 0.75, rate: 0.7 }); play('land', { fighter: at, gain: 0.5, rate: 0.6, delay: 0.25 }); }
+    else if (kind === 'fall') { play('whoosh_heavy', { fighter: at, gain: 0.7, rate: 0.6 }); roar(0.8, 1.5); }
+    else if (kind === 'vent') play('fire', { fighter: at, gain: 0.75, rate: 0.85 });
+    else if (kind === 'storm') { play('thunder', { gain: 0.9, rate: 0.8, vary: 0 }); roar(0.6); }
+    else if (kind === 'strike') play('thunder', { fighter: at, gain: 0.6, rate: 1.15 });
+  });
   events.on('ko', ({ fighter }) => {
     play('ko', { fighter, gain: 1 });
     play('crowd_cheer', { gain: 0.6, delay: 0.15 });

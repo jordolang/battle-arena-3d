@@ -304,7 +304,7 @@ function boot() {
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));
     const tc = Math.max(0, Math.min(4, +params.get('teams') || 0));
     menus.cb.onStart({
-      mode: params.get('mode') || 'cpu', winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
+      mode: params.get('mode') || 'cpu', map: params.get('map') || undefined, winsNeeded: +params.get('wins') || 1, difficulty: 'normal', suddenDeath: +params.get('sd') || 30,
       teams: { count: tc, names: TEAM_DEFAULT_NAMES.slice(0, tc) },
       slots: Array.from({ length: n }, (_, i) => ({ control: 'cpu', fighter: i % ROSTER.length, team: tc ? i % tc : -1 })),
     });

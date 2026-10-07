@@ -90,6 +90,14 @@ export class AIController {
       return;
     }
 
+    // 1a) get clear of an arena hazard: a cracking bridge slab, a waking fire vent, the storm wall
+    const flee = world.arena.danger?.(me.pos.x, me.pos.z, world);
+    if (flee) {
+      this.wantMove = flee;
+      this.sprint = !me.exhausted && me.stamina > 30;
+      return;
+    }
+
     // 1b) team play: revive a downed teammate, grab power-ups, heal at a spring
     if (this.support(me, world, dist)) return;
 
@@ -182,7 +190,7 @@ export class AIController {
         if (od < 2.2 && od > 0.01) { mx += (ox / od) * (2.2 - od) * 0.6; mz += (oz / od) * (2.2 - od) * 0.6; }
       }
       // steer round pillars, boulders and walls
-      const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe);
+      const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe, world);
       mx += av.x; mz += av.z;
       const l = Math.hypot(mx, mz) || 1;
       const hesitate = Math.random() > this.p.aggression ? 0.35 : 1;
@@ -310,7 +318,7 @@ export class AIController {
     let mx = x - me.pos.x, mz = z - me.pos.z;
     const l = Math.hypot(mx, mz) || 1;
     mx /= l; mz /= l;
-    const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe);
+    const av = world.arena.avoid(me.pos.x, me.pos.z, this.strafe, world);
     mx += av.x; mz += av.z;
     const l2 = Math.hypot(mx, mz) || 1;
     this.wantMove = { x: mx / l2, z: mz / l2 };

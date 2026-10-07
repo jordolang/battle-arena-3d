@@ -1,6 +1,6 @@
 // Screens for online play: host or join a room, the room lobby, the in-match
 // menu and the results buttons. Plugs into Menus through its onAct/onOpt/onShow hooks.
-import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
+import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName, arenaLabel } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { lookSummary } from '../cosmetics.js';
 import { shareOnFacebook } from '../share.js';
@@ -250,6 +250,7 @@ export class OnlineMenus {
       ['wins', 'Rounds to win', r.winsNeeded],
       ['diff', 'CPU skill', DIFFICULTY[r.difficulty]?.label || r.difficulty],
       ['sudden', 'Sudden death', r.suddenDeath ? `after ${r.suddenDeath}s` : 'Off'],
+      ['arena', 'Arena', arenaLabel(r.arena)],
       ['teams', 'Teams', r.teams ? `${r.teams} teams` : 'Free-for-all'],
     ];
     const tc = r.teams || 0;
@@ -326,7 +327,7 @@ export class OnlineMenus {
     this.teamNamesEl.hidden = true;
     this.teamNamesEl.innerHTML = '';
     this.teamNamesCount = -1;
-    el.querySelector('.net-rules').innerHTML = [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']]
+    el.querySelector('.net-rules').innerHTML = [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Random each battle, power-ups on']]
       .map(([k, v]) => `<div class="row static"><span class="lbl">${k}</span><span class="val">${esc(v)}</span></div>`).join('');
     const count = Math.max(4, L.members.length);
     const rows = [];

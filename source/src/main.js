@@ -14,6 +14,8 @@ import { ChatPanel } from './net/chat.js';
 import { CharacterSelect } from './charSelect.js';
 import { wardrobe } from './cosmetics.js';
 import { Account } from './account.js';
+import { Progression, trackMatchCounts } from './progression.js';
+import { ProgressionMenus } from './progression-ui.js';
 import { AccountMenus } from './account-ui.js';
 import { Training } from './training.js';
 import { prompts, registerPromptDevice } from './prompts.js';
@@ -42,6 +44,7 @@ function boot() {
   let online = null;
   let session = null;
   let accountUi = null;
+  let progressUi = null;
   // every player signs in with a José Madrid Salsa account; their matches go on their profile
   const account = new Account(params);
   let training = null;
@@ -69,13 +72,14 @@ function boot() {
       // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
       if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
       if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
+      if (progressUi?.onAct(act, el)) return;
       if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
     },
     onOpt: (key, el, d) => {
       if (key === 'tr-fighter') return training.changeFighter(d);
       if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
     },
-    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); progressUi?.onShow(name); online?.onShow(name); },
     onSelect: (key) => online?.openSelect(key),
     // the locker's "make this my fighter" also becomes your pick online
     onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
@@ -84,6 +88,12 @@ function boot() {
   game.coveredBy = () => menus.active;
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
+  // fighter levels, daily and weekly challenges and the season pass; the group track follows the
+  // fundraising team found for the code on the title screen
+  const progression = new Progression();
+  progression.group = () => menus.fundraiser?.team || null;
+  menus.progression = progression;
+  progressUi = new ProgressionMenus({ menus, progression });
   training = new Training({ game, menus, bindings, keyboard, events });
   // ---- controllers and touch ----
   const touch = new TouchControls({
@@ -197,12 +207,23 @@ function boot() {
   const recordMatch = (champ, fighters) => {
     const me = game.online ? game.localFighter
       : fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0];
+    menus.progress = null;
     if (!me || game.mode !== 'match' || training.active) return []; // practice doesn't count
     const won = champ === me || (champ && champ.team >= 0 && champ.team === me.team);
+    // XP first: season pass tiers it reaches grant items, which the wardrobe then announces
+    const prog = menus.progress = progression.recordMatch({
+      fighter: me.def.id, won, rounds: me.stats.wins, kos: me.stats.kos, damage: me.stats.damage, versus: !!game.online, counts: matchCounts(),
+    });
     const fresh = wardrobe.recordMatch({ won, rounds: me.stats.wins, kos: me.stats.kos });
-    if (fresh.length && session.kind === 'tournament') game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    if (session.kind === 'tournament') {
+      game.hud.feed(`<b>+${prog.xp} XP</b> <span>${prog.levelUps.length ? `${me.def.name} level ${prog.after.level}` : `season tier ${prog.tier.tier}`}</span>`);
+      if (fresh.length) game.hud.feed(`<b>Unlocked</b> <span>${fresh.map((x) => x.item.label).join(', ')}</span>`);
+    }
     return fresh;
   };
+  // this match's specials, skills, parries, power-ups and guard breaks, for challenges
+  const matchCounts = trackMatchCounts(events, () => (game.online ? game.localFighter
+    : game.fighters.filter((f) => f.isHuman).sort((a, b) => a.controller.playerIndex - b.controller.playerIndex)[0]) || null);
 
   game.onMatchEnd = (champ, fighters) => {
     menus.newUnlocks = recordMatch(champ, fighters);
@@ -212,7 +233,7 @@ function boot() {
     // freeze the deciding knockout now, then play it back (recording the clip) before the results
     const teamed = champ.team >= 0 && champ.teamColor != null;
     game.replay.capture(teamed ? `${champ.teamName} win the arena` : `${champ.name}${champ.label !== 'CPU' ? ` (${champ.label})` : ''} wins`);
-    const results = () => { if (game.phase === 'matchOver') menus.showResults(champ, fighters); };
+    const results = () => { if (game.phase === 'matchOver') { menus.showResults(champ, fighters); progressUi.renderResult(menus.progress); } };
     setTimeout(() => {
       if (game.phase !== 'matchOver') return;
       game.keyboard.captureGameKeys = false;
@@ -299,7 +320,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account, wardrobe };
+  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account, wardrobe, progression };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

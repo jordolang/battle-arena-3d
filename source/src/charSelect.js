@@ -217,7 +217,7 @@ export class CharacterSelect {
   renderRoster() {
     const cards = ROSTER.map((def, i) => `<button class="nav cs-card" data-act="cs-pick" data-i="${i}" style="--fc:${hex(def.eyes)}">
         <img class="cs-portrait" alt="" data-i="${i}">
-        <span class="cs-cname">${esc(def.name)}</span><span class="cs-role">${esc(def.role || '')}</span></button>`);
+        <span class="cs-cname">${esc(def.name)}</span><span class="cs-role">${esc(def.role || '')}</span>${this.levelBadge(def)}</button>`);
     if (this.opts.random) cards.push(`<button class="nav cs-card random" data-act="cs-pick" data-i="-1" style="--fc:#a3968a">
         <span class="cs-portrait q">?</span><span class="cs-cname">Random</span><span class="cs-role">Any of the eight</span></button>`);
     this.q('.cs-roster').innerHTML = cards.join('');
@@ -226,6 +226,12 @@ export class CharacterSelect {
     this.q('.cs-record').innerHTML = this.opts.wardrobe
       ? `<span><b>${st.wins}</b> wins</span><span><b>${st.kos}</b> KOs</span><span><b>${st.matches}</b> matches</span><span class="cs-owned"><b>${wardrobe.unlockedCount}</b>/${ITEM_COUNT} unlocked</span>`
       : '';
+  }
+
+  // the fighter's level from the season pass (progression.js), on the people's own select screens
+  levelBadge(def) {
+    const f = this.opts.wardrobe ? this.menus.progression?.fighter(def.id) : null;
+    return f ? `<span class="cs-lv"${f.mastery ? ` style="color:${f.mastery.color}"` : ''} title="${f.mastery ? `${f.mastery.label} mastery` : ''}">Lv ${f.level}</span>` : '';
   }
 
   renderInfo() {

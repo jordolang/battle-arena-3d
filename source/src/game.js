@@ -14,6 +14,7 @@ import { Hud } from './hud.js';
 import { Replay } from './replay.js';
 import { Hill } from './hill.js';
 import { wardrobe, randomLook } from './cosmetics.js';
+import { QualityGovernor, isHandheld } from './perf.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -25,22 +26,22 @@ export class Game {
     this.events = events;
     this.quality = quality;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // phones with dense screens skip MSAA: at 2-3x pixel density the edges are already fine and it costs fill rate
+    const antialias = !(quality === 'auto' && isHandheld() && (window.devicePixelRatio || 1) >= 2);
+    this.renderer = new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
-    this.renderer.shadowMap.enabled = quality !== 'low';
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.maxPixelRatio = quality === 'low' ? 1 : quality === 'high' ? 2 : 1.6;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
+    this.perf = new QualityGovernor(this, quality);
+    this.pixelRatio = this.perf.pixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     stage.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.rig = new CameraRig(1);
-    this.arenaQuality = quality === 'auto' ? 'high' : quality;
-    this.arenas = { coliseum: new Arena(this.scene, this.arenaQuality) };
+    this.arenas = { coliseum: new Arena(this.scene, 'high') };
     this.arena = this.arenas.coliseum;
+    this.perf.apply();
     this.effects = new Effects(this.scene);
     this.pickups = new Pickups(this);
     this.pickups.setPads(this.arena.pads);
@@ -73,7 +74,6 @@ export class Game {
     this.setup = null;
     this.onMatchEnd = null;
     this.frameMs = 16;
-    this.perfTimer = 0;
     this.errors = 0;
     this.fastForward = false;
     this.debugSpeed = 1;
@@ -152,8 +152,8 @@ export class Game {
   useArena(name) {
     this.rig.maxDistance = name === 'badlands' ? 50 : 36;
     if (!this.arenas[name]) {
-      this.arenas[name] = new Badlands(this.scene, this.arenaQuality);
-      this.arenas[name].moon.castShadow = this.renderer.shadowMap.enabled;
+      this.arenas[name] = new Badlands(this.scene, 'high');
+      this.perf.applyLight(this.arenas[name].moon);
     }
     const next = this.arenas[name];
     for (const a of Object.values(this.arenas)) if (a !== next) a.show(false);
@@ -595,6 +595,7 @@ export class Game {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
+    const rawDt = dt;
     if (dt > 0.1) dt = 0.1;
     this.frameMs = this.frameMs * 0.95 + dt * 1000 * 0.05;
 
@@ -638,9 +639,12 @@ export class Game {
         this.replay.record();
       }
       if (noRender) return;
-      this.renderer.render(this.scene, this.rig.camera);
+      // behind the fighter preview (its own 3D view) the scene is only a backdrop: half rate on the lower tiers
+      const covered = this.coveredBy?.() === 'select';
+      this.skipFrame = covered && this.perf.tier >= 2 && !this.skipFrame;
+      if (!this.skipFrame) this.renderer.render(this.scene, this.rig.camera);
       this.replay.afterRender(dt);
-      this.adaptQuality(dt);
+      this.perf.sample(rawDt, covered);
     } catch (err) {
       this.errors++;
       console.error('[game] frame error', err);
@@ -666,30 +670,14 @@ export class Game {
     this.hud.update(dt, this.rig.camera, this.width, this.height);
   }
 
-  adaptQuality(dt) {
-    if (this.quality !== 'auto') return;
-    this.perfTimer += dt;
-    if (this.perfTimer < 2.5) return;
-    this.perfTimer = 0;
-    const target = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
-    if (this.frameMs > 21 && this.pixelRatio > 0.6) {
-      this.pixelRatio = Math.max(0.6, this.pixelRatio - 0.2);
-      this.renderer.setPixelRatio(this.pixelRatio);
-      this.resize();
-      if (this.pixelRatio <= 0.8 && this.renderer.shadowMap.enabled && this.frameMs > 28) {
-        this.renderer.shadowMap.enabled = false;
-        this.arena.moon.castShadow = false;
-      }
-    } else if (this.frameMs < 13 && this.pixelRatio < target) {
-      this.pixelRatio = Math.min(target, this.pixelRatio + 0.1);
-      this.renderer.setPixelRatio(this.pixelRatio);
-      this.resize();
-    }
+  setQuality(q) {
+    this.quality = q;
+    this.perf.setMode(q);
   }
 
   stats() {
     return {
-      fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, phase: this.phase, round: this.round, mode: this.mode,
+      fps: Math.round(1000 / this.frameMs), pixelRatio: this.pixelRatio, quality: this.perf.stats(), phase: this.phase, round: this.round, mode: this.mode,
       rules: this.rules.mode, map: this.arena.name, pickups: this.pickups.state(),
       fighters: this.fighters.map((f) => ({ name: f.name, team: f.team, hp: Math.round(f.hp), maxHp: f.maxHp, alive: f.alive, downed: +f.downed.toFixed(1), wins: f.stats.wins, kos: f.stats.kos, state: f.state, weapon: f.weapon, plate: Math.round(f.plate), items: f.items.map((it) => `${it.id}x${it.charges}`) })),
       drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles,

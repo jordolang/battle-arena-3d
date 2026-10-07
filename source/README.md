@@ -275,6 +275,26 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   the adapter can supply the account's stats, items granted outright, fundraiser membership and saved looks, and
   receives finished matches and wardrobe changes.
 
+## Levels, challenges and the season pass
+- **XP**: every match you play (not training) earns XP: 60 for finishing, 120 for a win, 25 per round won, 20 per
+  knockout and up to 60 for damage. Matches against people (online, tournaments) pay 25% more. The results screen
+  shows what the match earned.
+- **Fighter levels**: the XP levels up the fighter you played, from 1 to 20 (level L to L+1 costs 300 + 100×(L−1) XP).
+  Levels 5, 10, 15 and 20 are Bronze, Silver, Gold and Salsa Master mastery. Levels show on the character select
+  cards and the Season pass screen.
+- **Challenges**: three daily and three weekly challenges ("Win 3 matches with Volt", "Parry 3 attacks", "Finish a
+  match online"…), the same for everyone on the same day or week. Dailies are worth 200 XP, weeklies 750. Days reset
+  at local midnight, weeks on Monday.
+- **Season pass**: a season is a calendar month, the same period the fundraisers run on. The pass has 20 tiers at
+  1,000 XP each; every tier gives a cosmetic outright (items normally earned from your record, ones you don't own yet
+  first, rarest last; the order changes every season).
+- **Group track**: when your fundraising group (the code on the title screen) reaches 25%, 50%, 75% and 100% of its goal
+  this month, you get +10%, +20%, +30% and +50% season XP and the Golden Jar colours, Golden Mantle, Salsa King Crown and
+  Molten Salsa colours. Goal data comes from the same `/api/fundraisers` as the donate button.
+- **Storage**: progress is kept in this browser under `battle-arena.progress.v1`, like the wardrobe.
+  `progression.connectProfile(adapter)` in `src/progression.js` is the hook for keeping it on the account. Items from the
+  pass reach the wardrobe through `wardrobe.grantedBy(fn)`.
+
 ## Code map (`src/`)
 - `main.js` boot and wiring · `game.js` renderer, fixed 120 Hz simulation, rounds and match flow
 - `fighter.js` fighter state machine, movement, attacks, hit reactions, gear · `fighterModel.js` procedural jointed model
@@ -284,6 +304,8 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `cosmetics.js` clothing, colour schemes, headgear, back pieces and victory poses, unlock rules and the wardrobe ·
   `wardrobeModels.js` the 3D clothing and accessories · `bodyShapes.js` limb profiles shared by bodies and clothes ·
   `charSelect.js` the character select and locker room screen
+- `progression.js` XP, fighter levels, challenges and the season pass · `progression-ui.js` the Season pass screen and
+  the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
@@ -307,6 +329,15 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   MP4 or WebM clip with `MediaRecorder`. Only the playback is encoded, so normal play pays almost nothing. The results
   screen offers Watch the knockout, Share the KO clip (the phone share sheet, or save plus the Facebook dialog on a
   computer) and Save clip. `window.__arena.game.replay.stats()` shows the buffer and clip.
+- **Animation:** built. Stance, running, jumping, the duck-and-roll dodge and every punch and kick are real motion
+  capture from the CMU Graphics Lab Motion Capture Database, retargeted onto the fighter's twelve joints by
+  `tools/mocap/bake.mjs` and stored as compact quaternion frames in `src/mocapData.js` (about 33 KB). Attack clips are
+  time-warped so the moment of contact lands in each move's active window, so timing and hitboxes are unchanged.
+  Specials, skills, aiming, blocking, knockdowns and victory poses stay hand-made and blend with the captured motion.
+  Clothing, weapons and armor ride on the same joints, so they follow the clips. To change clips, edit the list at
+  the top of `bake.mjs`, then `npm i --no-save three@0.180.0 && node tools/mocap/bake.mjs` and rebuild.
 - Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match, `&mode=tournament&teams=2` on the Badlands.
 
 Three.js r180 and PeerJS 1.5.5 are vendored in `vendor/` (both MIT, see `vendor/three-LICENSE` and `vendor/peerjs-LICENSE`).
+Fighter motion comes from the CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), which is free for research
+and commercial projects; BVH conversion by Bruce Hahne. The database was created with funding from NSF EIA-0196217.

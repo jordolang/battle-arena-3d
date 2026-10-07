@@ -35,6 +35,7 @@ export class AIController {
       if (!this.bias.has(o.id)) this.bias.set(o.id, Math.random() * 4);
       const d = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z);
       let score = d + this.bias.get(o.id) + (o.hp / o.maxHp) * 3;
+      if (world.hill?.active && world.hill.inside(o)) score -= 4; // knock the king off the hill
       if (o === me.lastAttacker && world.time - me.lastHitTime < 3) score -= 5;
       // avoid everyone piling onto the same victim
       let crowd = 0;
@@ -92,6 +93,9 @@ export class AIController {
 
     // 1b) team play: revive a downed teammate, grab power-ups, heal at a spring
     if (this.support(me, world, dist)) return;
+
+    // 1c) king of the hill: get onto the ring, and fight whoever is standing on it
+    if (this.hill(me, world, dist)) return;
 
     // 2) defend against an incoming attack or projectile
     const threat = this.findThreat(me, world);
@@ -379,6 +383,20 @@ export class AIController {
       if ((rx * p.dir.x + rz * p.dir.z) / d > 0.85) return { type: 'projectile', dx: p.dir.x, dz: p.dir.z };
     }
     return null;
+  }
+
+  // King of the hill: walk (or sprint) to the ring unless a foe is right in your face. Once on it,
+  // the usual fighting takes over; targets standing on the ring are preferred (see pickTarget).
+  hill(me, world, dist) {
+    const h = world.hill;
+    if (!h?.active) return false;
+    const dx = h.pos.x - me.pos.x, dz = h.pos.z - me.pos.z, d = Math.hypot(dx, dz);
+    if (d < h.constructor.RADIUS_INSIDE) return false;
+    if (dist < 2.6 && Math.random() < 0.6) return false; // deal with the foe first
+    const avoid = world.arena.avoid?.(me.pos.x, me.pos.z, this.strafe) || { x: 0, z: 0 };
+    this.wantMove = { x: dx / d + avoid.x * 0.5, z: dz / d + avoid.z * 0.5 };
+    this.sprint = d > 6 && !me.exhausted && me.stamina > 40;
+    return true;
   }
 
   lineBlocked(me, T, world) {

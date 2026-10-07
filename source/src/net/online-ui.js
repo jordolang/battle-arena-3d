@@ -4,7 +4,8 @@ import { ROSTER, DIFFICULTY, TEAM_COLORS, cleanTeamName } from '../config.js';
 import { moveSummary } from '../ui.js';
 import { lookSummary } from '../cosmetics.js';
 import { shareOnFacebook } from '../share.js';
-import { ONLINE_COLORS, MAX_PLAYERS, cleanCode, isRoomCode, cleanName, saveOnlineSettings } from './session.js';
+import { ONLINE_COLORS, MAX_PLAYERS, QUEUES, cleanCode, isRoomCode, cleanName, saveOnlineSettings } from './session.js';
+import { TEAM_COLORS as QUEUE_TEAM_COLORS, HILL } from '../config.js';
 import { isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -55,7 +56,7 @@ export class OnlineMenus {
       else if (back) this.menus.show('lobby');
       else if (this.menus.active === 'results') this.decorateResults();
     };
-    session.onMatchStart = () => { this.lastKind = session.kind; };
+    session.onMatchStart = () => { this.lastKind = session.kind; if (session.format) this.lastFormat = session.format; };
     session.onLeft = (reason) => {
       if (this.tourney?.owns) { this.tourney.onLeft(reason); return; }
       // after a queue battle the host leaving is no news: everyone is on the results screen already
@@ -91,13 +92,16 @@ export class OnlineMenus {
       case 'net-queue':
       case 'net-requeue': {
         if (this.busy) return;
+        // which queue: the button's data-q, or the one you just played for "Queue again"
+        const format = act === 'net-requeue' ? this.lastFormat || 'brawl' : el?.dataset.q || 'brawl';
+        this.lastFormat = format;
         if (act === 'net-requeue') this.menus.show('online');
         this.prepareName();
         this.busy = true;
         try {
           if (!await this.checkFundraiser()) return;
-          this.setStatus('Looking for a battle…');
-          await s.queue();
+          this.setStatus(format === 'ranked' ? 'Looking for a ranked opponent…' : `Looking for a ${QUEUES[format].label.toLowerCase()} battle…`);
+          await s.queue(format);
           this.menus.show(s.game.online === 'client' ? null : 'lobby');
         } catch (err) {
           this.setStatus(this.explain(err), true);
@@ -144,6 +148,7 @@ export class OnlineMenus {
       case 'net-rematch': s.startMatch(); break;
       case 'net-lobby': s.backToLobby(); this.menus.show('lobby'); break;
       case 'net-leave': s.leave(null); break;
+      case 'net-other': this.lastKind = null; s.leave(null, true); this.menus.show('online'); break;
       case 'net-leave-title': this.lastKind = null; s.leave(null, true); this.menus.cb.onQuit(); break;
       case 'net-resume': this.menus.hideAll(); break;
     }
@@ -315,41 +320,65 @@ export class OnlineMenus {
     }
   }
 
-  // The queue's waiting room: a countdown, who is in, your fighter, and an invite link.
+  // The queue's waiting room: a countdown (or, in ranked, the search), who is in, your fighter, and an invite link.
   renderQueue(keepFocus) {
     const s = this.session;
     const L = s.lobby;
     const el = this.lobbyEl;
-    el.querySelector('.lobby-head .eyebrow').textContent = 'Battle starts in';
-    el.querySelector('.room-code').textContent = `${L.queue?.left ?? 0}s`;
-    if (!(performance.now() < this.flashUntil)) el.querySelector('.lobby-share').innerHTML = `Everyone who joins the queue before the countdown ends fights in this battle. Invite friends: <span class="invite">${esc(this.inviteLink())}</span>`;
+    const format = L.format || 'brawl';
+    const Q = QUEUES[format] || QUEUES.brawl;
+    const searching = Q.rated && L.queue?.left == null;
+    const elapsed = Math.max(0, Math.floor((Date.now() - (L.queue?.since || Date.now())) / 1000));
+    el.querySelector('.lobby-head .eyebrow').textContent = searching ? 'Ranked 1v1 · searching' : Q.rated ? 'Opponent found · fight in' : `${Q.label} · battle starts in`;
+    el.querySelector('.room-code').textContent = searching ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` : `${L.queue?.left ?? 0}s`;
+    if (!(performance.now() < this.flashUntil)) {
+      el.querySelector('.lobby-share').innerHTML = Q.rated
+        ? (searching ? 'Waiting for another fighter to queue for ranked. Stay on this screen; the fight starts by itself.' : 'Best of three. Leaving now counts as a loss.')
+        : `Everyone who joins this queue before the countdown ends fights in this battle. Invite friends: <span class="invite">${esc(this.inviteLink())}</span>`;
+    }
     this.teamNamesEl.hidden = true;
     this.teamNamesEl.innerHTML = '';
     this.teamNamesCount = -1;
-    el.querySelector('.net-rules').innerHTML = [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']]
+    const ruleRows = {
+      brawl: [['Battle', 'Free-for-all'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']],
+      hill: [['Battle', 'King of the hill'], ['Round', `First to ${HILL.target} points`], ['Knocked out', `Back in ${HILL.respawn}s`]],
+      duo: [['Battle', 'Two teams of two'], ['Rounds to win', L.rules.winsNeeded], ['Arena', 'Coliseum, power-ups on']],
+      ranked: [['Battle', 'One on one'], ['Match', 'Best of three'], ['Arena', 'Coliseum, no power-ups']],
+    }[format];
+    el.querySelector('.net-rules').innerHTML = ruleRows
       .map(([k, v]) => `<div class="row static"><span class="lbl">${k}</span><span class="val">${esc(v)}</span></div>`).join('');
-    const count = Math.max(4, L.members.length);
+    const count = Math.max(Q.fill, L.members.length);
     const rows = [];
     for (let i = 0; i < count; i++) {
       const m = L.members[i];
       const def = m && m.fighter >= 0 ? ROSTER[m.fighter] : null;
       const mine = m && m.id === s.myId;
-      const who = m ? `<span style="color:${ONLINE_COLORS[m.color]}">${esc(m.name)}</span>${mine ? '<small>You</small>' : ''}` : '<span>CPU</span>';
+      const rating = Q.rated && m ? `<span class="rating">${Number.isFinite(m.rating) ? m.rating : 'Unrated'}</span>` : '';
+      const who = m ? `<span style="color:${ONLINE_COLORS[m.color]}">${esc(m.name)}</span>${rating}${mine ? '<small>You</small>' : ''}` : `<span>${Q.rated ? 'Searching…' : 'CPU'}</span>`;
       const dress = m && def ? lookSummary(m.looks?.[def.id]) : '';
-      const inner = `<span class="fname">${m ? (def ? esc(def.name) : 'Random') : 'Waiting…'}</span><span class="ftitle">${dress ? `<em class="dress">${esc(dress)}</em> · ` : ''}${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : 'A CPU takes this seat if nobody joins'}</span>`;
+      const empty = Q.rated ? 'A real opponent takes this seat' : 'A CPU takes this seat if nobody joins';
+      const inner = `<span class="fname">${m ? (def ? esc(def.name) : 'Random') : 'Waiting…'}</span><span class="ftitle">${dress ? `<em class="dress">${esc(dress)}</em> · ` : ''}${def ? `${esc(def.title)} · ${esc(moveSummary(def))}` : m ? 'Any of the eight' : empty}</span>`;
+      // 2v2: the team each seat fights for (people as the host placed them, CPUs fill the short side)
+      const t = Q.teams && m ? (m.team || 0) % Q.teams : -1;
+      const team = Q.teams ? `<div class="team" style="--tc:${t >= 0 ? hex(QUEUE_TEAM_COLORS[t]) : '#888'}"><span>${t >= 0 ? esc(L.rules.teamNames?.[t] || `Team ${t + 1}`) : 'Auto'}</span></div>` : '';
       rows.push(`<div class="slot" style="--fc:${def ? hex(def.eyes) : '#888'}"><span class="slot-n">${i + 1}</span><div class="who">${who}</div>
-        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter" data-cs="net">${inner}</button>` : `<div class="fighter">${inner}</div>`}</div>`);
+        ${mine ? `<button class="nav opt fighter" data-opt="net-fighter" data-cs="net">${inner}</button>` : `<div class="fighter">${inner}</div>`}${team}</div>`);
     }
     // the countdown re-renders every second: only touch the seats when they changed, so clicks on them land
     const slotsEl = el.querySelector('.net-slots'), slotsHtml = rows.join('');
     if (slotsEl.dataset.html !== slotsHtml) { slotsEl.innerHTML = slotsHtml; slotsEl.dataset.html = slotsHtml; }
-    slotsEl.classList.remove('teamed');
-    el.querySelector('.net-note').textContent = `${L.members.length} in the queue. Up to ${MAX_PLAYERS} fight; CPUs fill a battle up to 4.`;
+    slotsEl.classList.toggle('teamed', !!Q.teams);
+    el.querySelector('.net-note').textContent = Q.rated
+      ? (searching ? 'Ranked fights are always one real player against another. Your rating moves with every result.' : 'Good luck.')
+      : `${L.members.length} in the queue. Up to ${Q.max} fight; CPUs fill a battle up to ${Q.fill}.`;
     const focusKey = keepFocus && el.contains(document.activeElement) ? `${document.activeElement.dataset.opt || ''}|${document.activeElement.dataset.act || ''}` : null;
     const actions = el.querySelector('.net-actions');
-    if (actions.dataset.mode !== 'queue') {
-      actions.dataset.mode = 'queue';
-      actions.innerHTML = '<button class="nav big primary" data-act="net-invite">Copy invite link</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave queue</button>';
+    const mode = `queue-${Q.rated ? (searching ? 'search' : 'found') : 'open'}`;
+    if (actions.dataset.mode !== mode) {
+      actions.dataset.mode = mode;
+      actions.innerHTML = Q.rated
+        ? `<button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">${searching ? 'Stop searching' : 'Leave (counts as a loss)'}</button>`
+        : '<button class="nav big primary" data-act="net-invite">Copy invite link</button><button class="nav big" data-act="net-invite-fb">Invite on Facebook</button><button class="nav big" data-act="to-controls">Controls</button><button class="nav big" data-act="net-leave">Leave queue</button>';
     }
     if (focusKey) [...el.querySelectorAll('.nav')].find((x) => `${x.dataset.opt || ''}|${x.dataset.act || ''}` === focusKey)?.focus({ preventScroll: true });
   }
@@ -363,9 +392,10 @@ export class OnlineMenus {
     if (this.lastKind === 'queue' || s.kind === 'queue') {
       this.lastKind = 'queue';
       screen.dataset.back = 'net-leave-title';
-      if (el.dataset.mode !== 'queue') {
-        el.dataset.mode = 'queue';
-        el.innerHTML = '<button class="nav big primary" data-act="net-requeue">Queue again</button><button class="nav big" data-act="net-leave-title">Title screen</button>';
+      if (el.dataset.mode !== `queue-${this.lastFormat}`) {
+        el.dataset.mode = `queue-${this.lastFormat}`;
+        const label = QUEUES[this.lastFormat || 'brawl']?.label || 'Free-for-all';
+        el.innerHTML = `<button class="nav big primary" data-act="net-requeue">Queue again <small>${esc(label)}</small></button><button class="nav big" data-act="net-other">Other queues</button><button class="nav big" data-act="net-leave-title">Title screen</button>`;
         if (this.menus.active === 'results') el.querySelector('.nav')?.focus({ preventScroll: true });
       }
       return;

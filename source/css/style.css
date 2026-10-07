@@ -879,6 +879,50 @@ body.touch-fight .coach-btn kbd { display: none; }
 @media (max-height: 500px) { body.touch-fight .coach-text { font-size: 12px; line-height: 1.25; } body.touch-fight .coach-head .coach-n { display: none; } }
 @media (orientation: portrait) and (max-width: 700px) { body.touch-fight #coach { top: 31%; width: calc(100% - 20px); } }
 
+/* ---------- Queues, king of the hill, ranked, arcade ---------- */
+.net-queues .big { width: 100%; text-align: left; font-size: 20px; padding-top: 6px; padding-bottom: 6px; }
+.net-queues .big small { display: block; font-size: 0.62em; letter-spacing: 0.12em; color: var(--ash); opacity: 0.8; }
+
+#hill-board {
+  width: min(340px, 86vw);
+  padding: 8px 12px; background: rgba(8, 4, 4, 0.62); border: 1px solid rgba(255, 210, 61, 0.28);
+  font-size: 15px; pointer-events: none;
+}
+#hill-board .hill-h { display: flex; justify-content: space-between; gap: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; }
+#hill-board .hill-h b { color: var(--gold); }
+#hill-board .hill-h em { font-style: normal; color: var(--ash); }
+#hill-board .hill-h .contested { color: #ff6a4a; }
+#hill-board .hill-row { display: grid; grid-template-columns: 10px minmax(0, 7em) 1fr 2.2em; align-items: center; gap: 8px; margin-top: 4px; }
+#hill-board .hill-row i { width: 10px; height: 10px; border-radius: 50%; }
+#hill-board .hill-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hill-board .hill-row b { text-align: right; }
+#hill-board .hill-bar { height: 6px; background: rgba(255, 255, 255, 0.08); }
+#hill-board .hill-bar u { display: block; height: 100%; text-decoration: none; }
+#hill-board .hill-foot { margin-top: 5px; font-size: 12px; color: var(--ash); letter-spacing: 0.06em; }
+#hill-board .hill-foot b { color: #ff9a4a; }
+@media (max-width: 620px) { #hill-board { font-size: 13px; } }
+
+.slot .rating { margin-left: 0.5em; font-size: 0.8em; color: var(--gold); letter-spacing: 0.04em; }
+.acct-result .delta-up { color: #7dff6b; }
+.acct-result .delta-down { color: #ff6b5a; }
+
+.ladder { display: flex; flex-direction: column-reverse; gap: 6px; margin: 10px 0 14px; }
+.ladder .rung {
+  display: grid; grid-template-columns: 2.4em 1fr auto; align-items: center; gap: 12px; padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(0, 0, 0, 0.25); border-left: 4px solid var(--fc, #888);
+}
+.ladder .rung .n { font-size: 13px; color: var(--ash); letter-spacing: 0.12em; }
+.ladder .rung .who b { font-size: 20px; }
+.ladder .rung .who small { display: block; color: var(--ash); font-size: 13px; letter-spacing: 0.06em; }
+.ladder .rung .st { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ash); }
+.ladder .rung.done { opacity: 0.55; }
+.ladder .rung.done .st { color: #7dff6b; }
+.ladder .rung.now { border-color: rgba(255, 210, 61, 0.6); background: rgba(255, 210, 61, 0.08); }
+.ladder .rung.now .st { color: var(--gold); }
+.ladder .rung.boss .who b { color: #ff5a3a; font-family: 'Grenze Gotisch', serif; font-weight: 500; letter-spacing: 0.04em; }
+.arcade-stats { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--ash); letter-spacing: 0.06em; }
+.arcade-stats b { color: var(--bone); font-size: 1.15em; }
+
 /* ---------- season pass, fighter levels and challenges (progression-ui.js) ---------- */
 .cs-card { position: relative; }
 .cs-lv { position: absolute; top: 4px; right: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--ash); }

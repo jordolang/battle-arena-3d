@@ -21,7 +21,21 @@ export const MODES = {
   tournament: { label: 'Tournament', map: 'badlands', durability: 2.6, powerups: true, friendlyFire: true, revive: true },
   // tutorial and practice room: you and a training dummy, nobody can be knocked out, gear is placed by the lesson
   practice:   { label: 'Training', map: 'coliseum', durability: 1, powerups: true, friendlyFire: false, revive: false },
+  // King of the hill: hold the glowing ring alone to score; knocked-out fighters come back after a few seconds
+  hill:       { label: 'King of the hill', map: 'coliseum', durability: 1.4, powerups: true, friendlyFire: false, revive: false, hill: true },
+  // the 2v2 online queue: two teams of two, CPUs fill empty places
+  duo:        { label: 'Online 2v2', map: 'coliseum', durability: 1.9, powerups: true, friendlyFire: false, revive: false },
+  // ranked 1v1: the same fight for both players, so no power-ups; best of three for rating
+  ranked:     { label: 'Ranked 1v1', map: 'coliseum', durability: 1.7, powerups: false, friendlyFire: false, revive: false },
+  // the arcade ladder: one CPU after another, then the boss
+  arcade:     { label: 'Arcade', map: 'coliseum', durability: 1.5, powerups: true, friendlyFire: false, revive: false },
 };
+
+// King of the hill. The ring sits on one of `spots` and moves every `moveEvery` seconds; whoever stands in
+// it alone (or with only teammates) scores a point a second. First to `target` takes the round; after
+// `limit` seconds the highest score does. Knocked-out fighters are back after `respawn` seconds.
+export const HILL = { radius: 3.2, target: 25, limit: 120, moveEvery: 22, respawn: 3.5, invuln: 1.6,
+  spots: [[0, 0], [7.2, 0], [-7.2, 0], [0, 7.2], [0, -7.2]] };
 export function modeRules(mode) { return { mode, ...(MODES[mode] || MODES.cpu) }; }
 
 // Team tactics and the wider move set.

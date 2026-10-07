@@ -286,6 +286,15 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   MP4 or WebM clip with `MediaRecorder`. Only the playback is encoded, so normal play pays almost nothing. The results
   screen offers Watch the knockout, Share the KO clip (the phone share sheet, or save plus the Facebook dialog on a
   computer) and Save clip. `window.__arena.game.replay.stats()` shows the buffer and clip.
+- **Animation:** built. Stance, running, jumping, the duck-and-roll dodge and every punch and kick are real motion
+  capture from the CMU Graphics Lab Motion Capture Database, retargeted onto the fighter's twelve joints by
+  `tools/mocap/bake.mjs` and stored as compact quaternion frames in `src/mocapData.js` (about 33 KB). Attack clips are
+  time-warped so the moment of contact lands in each move's active window, so timing and hitboxes are unchanged.
+  Specials, skills, aiming, blocking, knockdowns and victory poses stay hand-made and blend with the captured motion.
+  Clothing, weapons and armor ride on the same joints, so they follow the clips. To change clips, edit the list at
+  the top of `bake.mjs`, then `npm i --no-save three@0.180.0 && node tools/mocap/bake.mjs` and rebuild.
 - Debug: `window.__arena.game.stats()`; `?autotest=8` starts an all-CPU match, `&mode=tournament&teams=2` on the Badlands.
 
 Three.js r180 and PeerJS 1.5.5 are vendored in `vendor/` (both MIT, see `vendor/three-LICENSE` and `vendor/peerjs-LICENSE`).
+Fighter motion comes from the CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), which is free for research
+and commercial projects; BVH conversion by Bruce Hahne. The database was created with funding from NSF EIA-0196217.

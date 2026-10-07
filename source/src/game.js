@@ -1,6 +1,6 @@
 // Game orchestration: renderer, fixed-step simulation, rounds and match flow.
 import * as THREE from 'three';
-import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, ARENAS, cleanTeamName, modeRules, pickArena } from './config.js';
+import { SIM_DT, ROSTER, PLAYER_COLORS, TEAM_COLORS, POWERUPS, WEAPONS, COMBAT, HILL, ARENAS, cleanTeamName, modeRules, pickArena } from './config.js';
 import { events } from './events.js';
 import { Arena } from './arena.js';
 import { Badlands } from './battleground.js';
@@ -15,6 +15,7 @@ import { AIController, DummyController } from './ai.js';
 import { HumanController, devices } from './input.js';
 import { Hud } from './hud.js';
 import { Replay } from './replay.js';
+import { Hill } from './hill.js';
 import { wardrobe, randomLook } from './cosmetics.js';
 import { QualityGovernor, isHandheld } from './perf.js';
 
@@ -54,6 +55,7 @@ export class Game {
     this.reviveOn = false;
     this.hud = new Hud(hudRoot);
     this.replay = new Replay(this);
+    this.hill = new Hill(this);
 
     // world state read by fighters, AI and specials
     this.fighters = [];
@@ -268,8 +270,10 @@ export class Game {
       // people wear what they picked in the wardrobe, CPUs and the practice dummy dress themselves
       const look = s.look && typeof s.look === 'object' ? s.look
         : s.control === 'cpu' || s.control === 'dummy' ? randomLook() : wardrobe.lookFor(index);
-      const f = new Fighter(ROSTER[index], i, ctrl, look);
+      // a slot can bring its own fighter definition (the arcade boss is a giant version of a roster fighter)
+      const f = new Fighter(s.def || ROSTER[index], i, ctrl, look);
       if (ctrl.name) f.name = ctrl.name;
+      if (s.name) f.name = s.name;
       f.setReward(s.reward);
       return f;
     });
@@ -351,6 +355,7 @@ export class Game {
       this.rig.winner = null;
       this.arena.resetFireRing();
       this.pickups.reset(false);
+      this.hill.reset();
     }
   }
 
@@ -407,6 +412,7 @@ export class Game {
     const order = this.teamMode ? [...this.fighters].sort((a, b) => a.team - b.team || a.slot - b.slot) : this.fighters;
     const spots = this.arena.spawnPoints(order);
     order.forEach((f, i) => f.reset(new THREE.Vector3(spots[i].x, 0, spots[i].z), spots[i].facing));
+    this.hill.reset();
     if (this.mode === 'match') {
       this.rig.mode = 'fight';
       this.rig.winner = null;
@@ -433,7 +439,7 @@ export class Game {
     if (this.phase === 'fight') {
       this.fightTime += dt;
       const sd = this.setup.suddenDeath;
-      if (sd > 0 && this.fightTime > sd) {
+      if (sd > 0 && this.fightTime > sd && !this.hill.active) { // king of the hill has its own clock
         if (!this.suddenDeath) {
           this.suddenDeath = true;
           this.ringRadius = this.arena.radius + 0.6;
@@ -461,7 +467,12 @@ export class Game {
       }
     }
 
-    if (this.phase === 'fight') {
+    if (this.phase === 'fight' && this.hill.active) {
+      // king of the hill: rounds end on points (or time), never on knockouts
+      const w = this.hill.tick(dt);
+      if (w !== undefined) this.endRound(w);
+      if (this.mode === 'match') this.onTick?.(dt);
+    } else if (this.phase === 'fight') {
       const alive = this.fighters.filter((f) => f.alive);
       if (this.teamMode) {
         const left = new Set(alive.map((f) => f.team));
@@ -605,6 +616,7 @@ export class Game {
         this.replay.step(dt);
       } else if (this.online === 'client') {
         this.net.clientStep(dt);
+        this.hill.animate(dt);
         this.pickups.animate(this.time);
         this.effects.update(dt);
         this.arena.update(dt, this);
@@ -618,7 +630,7 @@ export class Game {
         if (this.slowmo > 0) { this.slowmo -= dt; this.timeScale = this.slowmo > 0 ? 0.3 : 1; }
         const humansAlive = this.fighters.some((f) => f.isHuman && f.alive);
         const anyHuman = this.fighters.some((f) => f.isHuman);
-        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive &&
+        const ff = !this.online && this.mode === 'match' && this.phase === 'fight' && anyHuman && !humansAlive && !this.hill.active &&
           (this.keyboard.isDown('KeyX') || !!devices.touch?.isDown('ff') || !!devices.pads?.anyDown('b0'));
         const scale = this.timeScale * (ff ? 3 : 1) * this.debugSpeed;
         this.acc += dt * scale;
@@ -627,6 +639,7 @@ export class Game {
         while (this.acc >= SIM_DT && steps < maxSteps) { this.tick(SIM_DT); this.acc -= SIM_DT; steps++; }
         if (steps >= maxSteps) this.acc = 0;
         this.effects.update(dt * scale);
+        this.hill.animate(dt);
         this.pickups.animate(this.time);
         this.arena.update(dt * scale, this);
         this.rig.update(dt, this.fighters);
@@ -652,7 +665,11 @@ export class Game {
   }
 
   updateHud(dt, spectating) {
-    if (this.phase === 'fight' || this.phase === 'roundOver') {
+    if (this.hill.active) spectating = false; // knocked-out fighters are back in a moment
+    if ((this.phase === 'fight' || this.phase === 'roundOver') && this.hill.active) {
+      const left = Math.max(0, (this.rules.hillLimit || HILL.limit) - this.hill.time);
+      this.hud.setTimer(String(Math.ceil(left)), left < 10);
+    } else if (this.phase === 'fight' || this.phase === 'roundOver') {
       const sd = this.setup.suddenDeath;
       if (sd > 0) {
         const left = Math.max(0, sd - this.fightTime);

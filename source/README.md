@@ -76,14 +76,34 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   connected controller, the on-screen button names on a touch screen. `main.js` registers the gamepad and touch labels.
   On a controller View skips a lesson (or cycles the dummy); in the practice room L3 lays out gear and R3 resets.
 
-## Fight online: the 30-second queue
-- Choose **Fight online**, then **Join the queue**. The first person to queue opens a battle and a 30-second countdown;
+## Fight online: the queues
+- **Fight online** offers four queues, each with its own beacon (`queue-v9`, `hill-v9`, `duo-v9`, `ranked-v9`), so
+  players only meet others who picked the same one:
+  - **Free-for-all**: up to 8, last one standing, CPUs fill to 4 (the original queue, described below).
+  - **King of the hill**: free-for-all on the hill rules (see Modes), up to 8, CPUs fill to 4.
+  - **2v2**: two teams of two (Red and Blue); people are split across the teams as they join, CPUs fill the short side.
+  - **Ranked 1v1**: exactly two people and no CPUs. The host waits as long as it takes; once an opponent arrives the
+    fight starts after 5 seconds. Best of three, no power-ups. Leaving (or losing the connection) mid-match forfeits.
+    The lobby shows each player's site rating; the rating itself lives on the José Madrid Salsa site.
+- The queue: the first person to queue opens a battle and a 30-second countdown;
   everyone who queues before it ends lands in the same battle (up to 8; it starts early when full). CPU fighters fill
   a battle up to 4. While waiting you pick your fighter and can copy an invite link (`?room=CODE`) for friends.
-- After the battle everyone gets **Queue again**.
-- How the queue works without a server: the queue opener claims a well-known PeerJS name (`queue-v4`). Anyone else who
+- After the battle everyone gets **Queue again** (the same queue) or **Other queues**.
+- How the queue works without a server: the queue opener claims a well-known PeerJS name (`queue-v9` for the free-for-all). Anyone else who
   tries to claim it is told it is taken, asks its holder for the battle's room code, and joins that room. When the
   countdown ends the opener lets the name go, so the next person to queue opens the next battle.
+
+## Modes: king of the hill and the arcade
+- **King of the hill** (`src/hill.js`, `HILL` in `config.js`): pick it as the Mode on the Versus CPU screen, or queue for
+  it online. A glowing ring stands on one of five spots and moves every 22 seconds. Standing in it alone (or with only
+  teammates) scores a point a second; with a rival inside it is contested and nobody scores. First to 25 takes the
+  round; after 120 seconds the leader does. Knocked-out fighters come back after 3.5 seconds on the far side, briefly
+  untouchable. CPUs head for the ring and go after whoever holds it. Online, the host sends the hill in each snapshot.
+- **Arcade** (`src/arcade.js`): one player climbs a ladder of five CPU fights (easy, normal, two at once, hard, brutal)
+  and then the boss, El Diablo: a giant Titan, Onyx or Kane with nearly triple health, heavier blows and a golden
+  crown, best of three. Losing spends one of three continues and repeats the stage. Score is 1,000 x the stage (x3
+  for the boss) plus knockouts, damage and health left; the best score is kept in this browser. Each stage is a normal
+  local match, so it goes on your profile and counts toward locker unlocks.
 
 ## Tournaments
 - **Admin**: on the Tournament screen fill in the name, start time and prize, the fighters per team (1 to 4), rounds to
@@ -304,6 +324,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
+- `hill.js` king of the hill (ring, scoring, respawns, scoreboard) · `arcade.js` the arcade ladder and its boss
 - `replay.js` instant replay of the final knockout and its shareable video clip (`share.js` posts it)
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 

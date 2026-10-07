@@ -22,6 +22,18 @@ export const PROTOCOL = 9;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
+// The online queues. Each has its own well-known beacon, so players only meet others who picked the same one.
+//   brawl   free-for-all, up to 8, CPUs fill to 4
+//   hill    king of the hill, free-for-all, up to 8, CPUs fill to 4
+//   duo     2v2: two teams of two, CPUs fill empty places
+//   ranked  1v1 for rating: exactly two players, no CPUs; the fight starts as soon as an opponent is found
+export const QUEUES = {
+  brawl:  { beacon: 'queue', label: 'Free-for-all', max: MAX_PLAYERS, fill: 4, mode: 'queue', teams: 0, wins: 2, sudden: 75 },
+  hill:   { beacon: 'hill', label: 'King of the hill', max: MAX_PLAYERS, fill: 4, mode: 'hill', teams: 0, wins: 2, sudden: 0 },
+  duo:    { beacon: 'duo', label: '2v2', max: 4, fill: 4, mode: 'duo', teams: 2, wins: 2, sudden: 75 },
+  ranked: { beacon: 'ranked', label: 'Ranked 1v1', max: 2, fill: 2, mode: 'ranked', teams: 0, wins: 2, sudden: 60, rated: true },
+};
+const RANKED_LEAD = 5; // seconds between finding an opponent and the ranked fight starting
 const CHAT_KEEP = 80;
 export const ONLINE_COLORS = ['#ff6b3d', '#3db8ff', '#7dff6b', '#ffd23d', '#ff6bd5', '#b38bff', '#4ff0d8', '#f2f2f2'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -46,7 +58,7 @@ const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'teleg
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
-  'weaponBreak', 'armorBreak', 'hazard'];
+  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -157,11 +169,16 @@ export class NetSession {
     this.unhook = [];
     this.chat = [];
     this.beacon = null;
+    // who you are on the José Madrid Salsa site, shown in ranked lobbies: { handle, rating }. main.js fills it in.
+    this.identity = () => ({});
     // ?predict=0 turns off client-side prediction (for comparing, or if it ever misbehaves)
     this.noPredict = new URLSearchParams(location.search).get('predict') === '0';
   }
 
   get kind() { return this.lobby?.kind || null; }
+  // which queue this lobby is ('brawl', 'hill', 'duo', 'ranked'), or null outside the queue
+  get format() { return this.lobby?.kind === 'queue' ? this.lobby.format || 'brawl' : null; }
+  get queueRules() { return QUEUES[this.format] || null; }
   get me() { return this.lobby?.members.find((m) => m.id === this.myId) || null; }
 
   get connected() { return !!this.role; }
@@ -169,7 +186,7 @@ export class NetSession {
 
   // ---------------------------------------------------------------- hosting
   // kind: 'room' (a private room), 'queue' (the 30-second public queue) or 'tournament' (fixed `code`, the host is the admin)
-  async host({ kind = 'room', code: fixed = null, tournament = null, keepBeacon = false } = {}) {
+  async host({ kind = 'room', code: fixed = null, tournament = null, keepBeacon = false, format = 'brawl' } = {}) {
     const beacon = keepBeacon ? this.beacon : null;
     if (beacon) this.beacon = null;
     this.leave(null, true);
@@ -199,9 +216,16 @@ export class NetSession {
     this.lobby = {
       code, base: code, epoch: 0, kind, inMatch: false,
       rules: { count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, arena: 'random', teams: 0, teamNames: [...TEAM_DEFAULT_NAMES], mode: kind === 'tournament' ? 'tournament' : 'queue' },
-      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier) }],
+      members: [{ id: 'host', name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), color: 0, team: 0, role: admin ? 'admin' : 'player', group: '', reward: admin ? 0 : cleanTier(this.menus.rewardTier), ...this.identity() }],
     };
-    if (kind === 'queue') this.lobby.queue = { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
+    if (kind === 'queue') {
+      const Q = QUEUES[format] || QUEUES.brawl;
+      this.lobby.format = QUEUES[format] ? format : 'brawl';
+      Object.assign(this.lobby.rules, { mode: Q.mode, count: Q.fill, teams: Q.teams, winsNeeded: Q.wins, suddenDeath: Q.sudden });
+      if (Q.teams) this.lobby.rules.teamNames = ['Red', 'Blue'];
+      // ranked waits for an opponent however long it takes; the others count down
+      this.lobby.queue = Q.rated ? { left: null, since: Date.now() } : { left: QUEUE_SECONDS, ends: performance.now() + QUEUE_SECONDS * 1000 };
+    }
     if (admin) {
       this.lobby.tournament = {
         name: cleanText(tournament?.name, 48) || 'Tournament', startsAt: String(tournament?.startsAt || '').slice(0, 32),
@@ -288,8 +312,9 @@ export class NetSession {
   // Why nobody else can join right now, or null.
   closedReason() {
     if (this.kind === 'tournament') return this.lobby.members.length >= MAX_TOURNAMENT ? `That tournament is full (${MAX_TOURNAMENT} people).` : null;
-    if (this.lobby.members.length >= MAX_PLAYERS) return 'That battle is full (8 players).';
-    if (this.kind === 'queue' && (this.lobby.inMatch || this.lobby.queue.left <= 0)) return 'That battle already started.';
+    const max = this.queueRules?.max || MAX_PLAYERS;
+    if (this.lobby.members.length >= max) return max === 2 ? 'That ranked fight already has two players.' : `That battle is full (${max} players).`;
+    if (this.kind === 'queue' && (this.lobby.inMatch || (this.lobby.queue.left != null && this.lobby.queue.left <= 0))) return 'That battle already started.';
     return null;
   }
 
@@ -304,8 +329,8 @@ export class NetSession {
     for (let n = 2; names.has(name.toLowerCase()); n++) name = `${cleanName(msg.name).slice(0, 13)} ${n}`;
     const role = tourney ? (msg.role === 'player' && group ? 'player' : 'spectator') : 'player';
     // reward: the cosmetic their fundraising group earned by reaching its goal (fundraiser.js)
-    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward) });
-    if (!tourney) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
+    this.lobby.members.push({ id, name, fighter, looks: cleanLooks(msg.looks), color, team: this.smallestTeam(), role, group: tourney ? group : '', reward: cleanTier(msg.reward), ...cleanIdentity(msg) });
+    if (!tourney && !this.queueRules?.teams) this.lobby.rules.count = Math.max(this.lobby.rules.count, this.lobby.members.length);
     this.transport.send(id, { t: 'welcome', id, lobby: this.lobby });
     if (tourney) {
       this.transport.send(id, { t: 'chatlog', l: this.chat });
@@ -339,33 +364,45 @@ export class NetSession {
     if (!this.lobby.inMatch) this.transport.broadcast({ t: 'ping' });
     // the queue counts down, then everyone in it fights (also when the battle fills up)
     const q = this.lobby.queue;
-    if (q && !this.lobby.inMatch && q.left > 0) {
+    const Q = this.queueRules;
+    if (q && !this.lobby.inMatch && Q?.rated) {
+      // ranked: once an opponent is here, a short lead-in and the fight; if they leave first, keep searching
+      const full = this.lobby.members.length >= Q.max;
+      if (full && q.left == null) q.ends = now + RANKED_LEAD * 1000;
+      if (!full) { q.left = null; this.broadcastLobby(); }
+      else {
+        q.left = Math.max(0, Math.ceil((q.ends - now) / 1000));
+        if (q.left <= 0) { this.beacon?.release(); this.beacon = null; this.startMatch(); } else this.broadcastLobby();
+      }
+    } else if (q && !this.lobby.inMatch && q.left > 0) {
       q.left = Math.max(0, Math.ceil((q.ends - now) / 1000));
-      if (this.lobby.members.length >= MAX_PLAYERS) q.left = 0;
+      if (this.lobby.members.length >= (Q?.max || MAX_PLAYERS)) q.left = 0;
       if (q.left <= 0) { this.beacon?.release(); this.beacon = null; this.startMatch(); } else this.broadcastLobby();
     }
   }
 
   // ---------------------------------------------------------------- the online queue
   // Joins the open queue, or opens one when nobody else has. Resolves to 'host' or 'client'.
-  async queue() {
+  async queue(format = 'brawl') {
     this.leave(null, true);
-    const name = `queue-v${PROTOCOL}`;
+    if (!QUEUES[format]) format = 'brawl';
+    const name = `${QUEUES[format].beacon}-v${PROTOCOL}`;
     let lastErr = null;
     for (let attempt = 0; attempt < 4; attempt++) {
       const beacon = createBeacon();
       try {
         await beacon.claim(name);
         this.beacon = beacon;
-        try { await this.host({ kind: 'queue', keepBeacon: true }); } catch (err) { this.beacon?.release(); this.beacon = null; throw err; }
-        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue?.left ?? 0 });
+        try { await this.host({ kind: 'queue', keepBeacon: true, format }); } catch (err) { this.beacon?.release(); this.beacon = null; throw err; }
+        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue ? this.lobby.queue.left : 0 });
         return 'host';
       } catch (err) {
         if (err.kind !== 'taken') throw err;
       }
       try {
         const info = await beacon.ask(name);
-        if (info?.code && info.left > 2) { await this.join(info.code); return 'client'; }
+        // (a ranked host still searching reports no countdown at all)
+        if (info?.code && (info.left === null || info.left > 2)) { await this.join(info.code); return 'client'; }
         lastErr = new TransportError('busy', 'A battle is just starting. Queue again in a moment.');
         await sleep(Math.min(5000, ((info?.left || 0) + 1.5) * 1000));
       } catch (err) {
@@ -505,7 +542,13 @@ export class NetSession {
     const i = this.lobby.members.findIndex((m) => m.id === id);
     if (i < 0) return;
     const [m] = this.lobby.members.splice(i, 1);
-    if (this.lobby.inMatch) {
+    if (this.lobby.inMatch && this.queueRules?.rated) {
+      // ranked: leaving forfeits. The leaver's fighter falls and whoever stayed wins the match.
+      const slot = this.spec.fighters.findIndex((f) => f.owner === id);
+      this.forfeit(slot);
+      this.controllers?.delete(id);
+      this.game.hud.feed(`<b style="color:${ONLINE_COLORS[m.color]}">${escHtml(m.name)}</b> <span>${why === 'left' ? 'left' : 'lost connection'} and forfeits</span>`);
+    } else if (this.lobby.inMatch) {
       // a CPU takes the seat so the match carries on
       const slot = this.spec.fighters.findIndex((f) => f.owner === id);
       const f = this.game.fighters[slot];
@@ -517,6 +560,22 @@ export class NetSession {
       this.game.hud.feed(`<b style="color:${ONLINE_COLORS[m.color]}">${escHtml(m.name)}</b> <span>${why === 'left' ? 'left' : 'lost connection'}, a CPU takes over</span>`);
     }
     this.broadcastLobby();
+  }
+
+  // Ranked forfeit: the fighter in `slot` is knocked out and the other one is given the rounds still needed.
+  forfeit(slot) {
+    const g = this.game;
+    const quitter = g.fighters[slot];
+    if (!quitter || g.phase === 'matchOver') return;
+    quitter.controller = null;
+    this.spec.fighters[slot].owner = null;
+    this.spec.forfeit = slot;
+    const other = g.fighters.find((f) => f !== quitter);
+    if (other) other.stats.wins = Math.max(other.stats.wins, g.setup.winsNeeded - 1);
+    if (g.phase === 'roundOver') { if (other) other.stats.wins = g.setup.winsNeeded; return; }
+    quitter.invuln = 0;
+    if (quitter.alive) quitter.applyDamage(quitter.hp + 1, null, g, true);
+    if (g.phase === 'intro') { g.phase = 'fight'; g.locked = false; }
   }
 
   broadcastLobby(extra = {}) {
@@ -604,7 +663,9 @@ export class NetSession {
       fighters.push(cpu);
     }
     const teams = { count: tc, names: rules.teamNames.slice(0, tc).map((n, i) => cleanTeamName(n, i)) };
-    this.launch({ setup: { mode: rules.mode || 'queue', map: pickArena(rules.arena), winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
+    // hazard arenas for free-for-all brawls and private rooms; hill, duo and ranked stay on the coliseum
+    const fixed = rules.mode === 'hill' || (this.format && this.format !== 'brawl');
+    this.launch({ setup: { mode: rules.mode || 'queue', map: fixed ? 'coliseum' : pickArena(rules.arena), winsNeeded: rules.winsNeeded, suddenDeath: rules.suddenDeath, difficulty: rules.difficulty, teams }, fighters });
   }
 
   // Starts a match from a spec: { setup, fighters: [{ def, pname, color, owner, team, reward }], label?, watchHint? }.
@@ -700,6 +761,7 @@ export class NetSession {
       ah: g.fighters.map((f) => (f.controller instanceof NetController && f.controller.from != null ? Math.round((g.time - f.controller.from + SIM_DT) * 1000) / 1000 : 0)),
       ...(this.snapSeq % DEEP_EVERY === 0 ? { d: this.deepState() } : {}),
       pu: g.pickups.state(),
+      hl: g.hill.active ? g.hill.state() : null,
       p: g.projectiles.filter((p) => !p.dead).map((p) => [p.id, PROJ_KINDS.indexOf(p.kind), r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.dir.x), r2(p.dir.z), p.owner.slot]),
     };
   }
@@ -728,7 +790,7 @@ export class NetSession {
     });
     this.chat = [];
     this.listenAsClient(transport);
-    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode });
+    transport.sendHost({ t: 'hello', v: PROTOCOL, name: cleanName(this.settings.name), fighter: this.settings.fighter, looks: wardrobe.allLooks(), role, group: cleanGroup(group), reward: cleanTier(this.menus.rewardTier), fc: this.fundraiserCode, ...this.identity() });
     try {
       await welcome;
     } catch (err) {
@@ -973,6 +1035,7 @@ export class NetSession {
       if (!mine) f.syncVisual(flags & 16 ? 0 : dt, g);
     });
     g.pickups.applyState(a.pu);
+    if (a.hl) g.hill.applyState(a.hl);
     // projectiles: create, move and retire to match the host
     const live = new Set();
     const prev = new Map((a.p || []).map((p) => [p[0], p]));
@@ -1128,16 +1191,19 @@ export class NetSession {
     this.pending = new Set();
     this.lastHousekeeping = now;
     const q = L.queue;
-    if (q) q.ends = now + q.left * 1000;
+    if (q && q.left != null) q.ends = now + q.left * 1000;
+    // ranked: the host leaving mid-match forfeits it, like anyone else leaving
+    const hostSlot = L.inMatch && this.queueRules?.rated ? this.spec.fighters.findIndex((f) => f.owner === 'host') : -1;
     this.listenAsHost(transport);
     if (L.inMatch) this.resumeAsHost(oldId);
+    if (hostSlot >= 0) this.forfeit(hostSlot);
     // the queue's beacon (the name new players look for) left with the old host: claim it back if free
-    if (q && !L.inMatch && q.left > 0) {
+    if (q && !L.inMatch && (q.left === null || q.left > 0)) {
       const beacon = createBeacon();
-      beacon.claim(`queue-v${PROTOCOL}`).then(() => {
+      beacon.claim(`${(this.queueRules || QUEUES.brawl).beacon}-v${PROTOCOL}`).then(() => {
         if (this.lobby !== L || !this.isHost) { beacon.release(); return; }
         this.beacon = beacon;
-        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue?.left ?? 0 });
+        beacon.info = () => ({ code: this.lobby?.code, left: this.lobby?.queue ? this.lobby.queue.left : 0 });
       }, () => {});
     }
     this.migrateNote('<b>You</b> <span>are hosting now</span>');
@@ -1265,6 +1331,15 @@ export class NetSession {
     this.game.net = null;
     if (!quiet) this.onLeft(reason);
   }
+}
+
+// Site handle and rating a player sends with their hello, for the ranked lobby (display only: the
+// website keeps the real ratings).
+function cleanIdentity(msg) {
+  const out = {};
+  if (typeof msg?.handle === 'string') out.handle = msg.handle.replace(/[\u0000-\u001f<>]/g, '').slice(0, 20);
+  if (Number.isFinite(msg?.rating)) out.rating = Math.round(Math.min(4000, Math.max(0, msg.rating)));
+  return out;
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

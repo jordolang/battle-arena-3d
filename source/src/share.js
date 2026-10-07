@@ -3,12 +3,15 @@
 // site prefill the post text, so a match result travels in the link: /api/share serves a page whose
 // preview says who won, then sends the visitor on to the game (and into the room, for an invite).
 
-export const GAME_URL = 'https://battle-arena-3d-mauve.vercel.app/';
+export const GAME_URL = 'https://battle.josemadridsalsa.com/';
 const HASHTAG = '#JoseMadridBattleArena';
 
 // The José Madrid Salsa fundraising site serves the game at /battle-arena and its share page at
-// /battle-arena/share; the game's own deployment serves them at / and /api/share.
-const ON_SITE = location.protocol === 'https:' && /(^|\.)josemadrid(salsa)?\.(net|com)$/.test(location.hostname);
+// /battle-arena/share; the game's own deployment (battle.josemadridsalsa.com, or its vercel.app
+// address) serves them at / and /api/share.
+export const OWN_DEPLOYMENT = /^https?:$/.test(globalThis.location?.protocol || '') &&
+  /(^battle\.josemadridsalsa\.com|\.vercel\.app)$/.test(location.hostname);
+const ON_SITE = location.protocol === 'https:' && !OWN_DEPLOYMENT && /(^|\.)josemadrid(salsa)?\.(net|com)$/.test(location.hostname);
 
 // The deployed site, or the public game when playing from a file or the Claude preview.
 function siteRoot() {

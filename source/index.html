@@ -41,7 +41,7 @@
 
   <section class="screen" id="screen-title" hidden>
     <div class="title-wrap">
-      <div class="eyebrow">Versus CPU · online brawls · team tournaments</div>
+      <div class="eyebrow">Versus CPU · arcade · online brawls · ranked · team tournaments</div>
       <h1 class="logo"><img src="assets/jose-madrid-battle-arena-logo.webp" alt="José Madrid Salsa Battle Arena" width="640" height="640"></h1>
       <p class="tagline">Eight warriors, one blood-moon coliseum. Punch, kick, dodge, cast your spells and unleash your special until only one fighter, or one team, is left standing.</p>
       <div class="account" id="account-box">
@@ -79,6 +79,7 @@
         <button class="nav big" data-act="to-setup">Fight <small>versus the CPU</small></button>
         <button class="nav big" data-act="to-online">Fight online <small>30-second queue</small></button>
         <button class="nav big" data-act="to-tourney">Tournament <small>team against team</small></button>
+        <button class="nav big" data-act="to-arcade">Arcade <small>climb the ladder, beat the boss</small></button>
         <button class="nav big" data-act="to-locker">Locker room <small>fighters &amp; outfits</small></button>
         <button class="nav big" data-act="to-boards">Leaderboards <small>players and groups</small></button>
         <button class="nav big" data-act="to-training">Training <small>tutorial and practice room</small></button>
@@ -212,18 +213,32 @@
     </div>
   </section>
 
+  <section class="screen" id="screen-arcade" data-back="arc-quit" hidden>
+    <div class="plate" style="width:min(620px,100%)">
+      <div class="eyebrow arc-eyebrow">Arcade</div>
+      <h2 class="arc-title">Climb the ladder</h2>
+      <p class="sub arc-sub"></p>
+      <button class="nav opt row" data-opt="arc-fighter"></button>
+      <div class="ladder"></div>
+      <div class="arcade-stats"></div>
+      <div class="actions arc-actions"></div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-online" data-back="to-title" hidden>
     <div class="plate net-plate">
       <div class="eyebrow">Online · 2 to 8 browsers</div>
       <h2>Fight online</h2>
-      <p class="sub">Join the queue: everyone who queues within the same 30 seconds drops into one battle, free-for-all, with CPU fighters filling out small ones. Invite friends with the link in the queue.</p>
+      <p class="sub">Pick a queue: everyone who joins the same one within 30 seconds drops into one battle, with CPU fighters filling out small ones. Ranked 1v1 waits for a real opponent and counts toward your rating. Invite friends with the link in the queue.</p>
       <div class="net-form">
         <label class="field" for="net-name"><span class="lbl">Your name</span><input id="net-name" class="nav" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Fighter"></label>
         <div class="net-choice">
-          <div class="net-card">
-            <div class="col-h">Queue</div>
-            <p>Find a battle with whoever is online now.</p>
-            <button class="nav big primary" data-act="net-queue">Join the queue</button>
+          <div class="net-card net-queues">
+            <div class="col-h">Queues</div>
+            <button class="nav big primary" data-act="net-queue" data-q="brawl">Free-for-all <small>up to 8, last one standing</small></button>
+            <button class="nav big" data-act="net-queue" data-q="hill">King of the hill <small>hold the ring to score</small></button>
+            <button class="nav big" data-act="net-queue" data-q="duo">2v2 <small>two teams of two</small></button>
+            <button class="nav big" data-act="net-queue" data-q="ranked">Ranked 1v1 <small>best of three for your rating</small></button>
           </div>
           <div class="net-card">
             <div class="col-h">Invited?</div>

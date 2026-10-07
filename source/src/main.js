@@ -16,6 +16,7 @@ import { wardrobe } from './cosmetics.js';
 import { Account } from './account.js';
 import { AccountMenus } from './account-ui.js';
 import { Training } from './training.js';
+import { Arcade } from './arcade.js';
 import { prompts, registerPromptDevice } from './prompts.js';
 import { padLabel } from './padmap.js';
 
@@ -45,11 +46,13 @@ function boot() {
   // every player signs in with a José Madrid Salsa account; their matches go on their profile
   const account = new Account(params);
   let training = null;
+  let arcade = null;
 
   const menus = new Menus({
     keyboard, bindings,
     onStart: (setup) => {
       training.stop();
+      arcade.stop();
       lastSetup = setup;
       online?.localMatch();
       audio.unlock();
@@ -58,8 +61,8 @@ function boot() {
       game.startMatch(setup, bindings);
     },
     onResume: () => { menus.hideAll(); game.setPaused(false); },
-    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
-    onQuit: () => { training.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
+    onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } if (arcade.active) { arcade.restartStage(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
+    onQuit: () => { training.stop(); arcade.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => setQuality(game, q),
     onVolumeChange: (v) => audio.setVolumes(v),
     onTouchChange: (s) => applyTouch(s),
@@ -69,13 +72,17 @@ function boot() {
       // the Training screen: the guided tutorial, the free practice room, and the way out of a finished tutorial
       if (act === 'tr-tutorial' || act === 'tr-practice') { online?.localMatch(); menus.hideAll(); game.setPaused(false); training.start(act === 'tr-tutorial' ? 'tutorial' : 'practice'); return; }
       if (act === 'tr-fight') { menus.cb.onQuit(); menus.show('setup'); return; }
+      // the arcade ladder
+      if (act === 'to-arcade') { online?.localMatch(); arcade.open(); return; }
+      if (act.startsWith('arc-') && arcade.onAct(act)) return;
       if (!accountUi?.onAct(act, el)) online?.onAct(act, el);
     },
     onOpt: (key, el, d) => {
       if (key === 'tr-fighter') return training.changeFighter(d);
+      if (key === 'arc-fighter') return arcade.changeFighter(d);
       if (!accountUi?.onOpt(key, el, d)) online?.onOpt(key, el, d);
     },
-    onShow: (name) => { if (name === 'training') training.renderMenu(); accountUi?.onShow(name); online?.onShow(name); },
+    onShow: (name) => { if (name === 'training') training.renderMenu(); if (name === 'arcade') arcade.render(); accountUi?.onShow(name); online?.onShow(name); },
     onSelect: (key) => online?.openSelect(key),
     // the locker's "make this my fighter" also becomes your pick online
     onFavourite: (f) => { session.settings.fighter = f; saveOnlineSettings(session.settings); },
@@ -84,6 +91,7 @@ function boot() {
   menus.account = account;
   accountUi = new AccountMenus({ menus, account });
   training = new Training({ game, menus, bindings, keyboard, events });
+  arcade = new Arcade({ game, menus, bindings });
   // ---- controllers and touch ----
   const touch = new TouchControls({
     onPause: () => keyboard.dispatch('Escape'),
@@ -191,6 +199,8 @@ function boot() {
   // online, your fighter name is your leaderboard name
   account.onChange(() => { if (account.handle && !session.connected) session.settings.name = account.handle; });
   account.refresh();
+  // ranked lobbies show each player's site handle and rating
+  session.identity = () => (account.handle ? { handle: account.handle, rating: account.profile?.player?.rating } : {});
 
   // Your match counts toward unlocking outfits: P1 on this keyboard, or your own fighter online.
   const recordMatch = (champ, fighters) => {
@@ -205,8 +215,9 @@ function boot() {
 
   game.onMatchEnd = (champ, fighters) => {
     menus.newUnlocks = recordMatch(champ, fighters);
-    // tournament matches go back to the bracket instead of the results screen
+    // tournament matches go back to the bracket instead of the results screen, arcade stages to the ladder
     if (session.kind === 'tournament') { session.onTournamentMatchEnd(champ); return; }
+    if (arcade.active) { arcade.onMatchEnd(champ); return; }
     menus.screens.results.querySelector('.acct-result').textContent = account.recording ? 'Saving to your profile…' : '';
     // freeze the deciding knockout now, then play it back (recording the clip) before the results
     const teamed = champ.team >= 0 && champ.teamColor != null;
@@ -298,7 +309,7 @@ function boot() {
   setTimeout(syncFocus, 300);
 
   // test and debugging hooks
-  window.__arena = { game, menus, events, bindings, session, audio, training, pads, touch, devices, keyboard, account, wardrobe };
+  window.__arena = { game, menus, events, bindings, session, audio, training, arcade, pads, touch, devices, keyboard, account, wardrobe };
   if (params.has('autotest')) {
     // ?autotest=8 runs an all-CPU match; &mode=tournament&teams=2 tries the Badlands with friendly fire and revives
     const n = Math.max(2, Math.min(8, +params.get('autotest') || 8));

@@ -1,7 +1,7 @@
 // Keyboard-first menus: title, fight setup, controls/rebinding, pause, results.
 import { shareOnFacebook, shareAnywhere, shareClip, saveClip } from './share.js';
 import { ROSTER, DIFFICULTY, ACTIONS, ACTION_LABELS, PLAYER_COLORS, DEFAULT_BINDINGS, SPECIALS, SKILLS, keyLabel,
-  TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, cleanTeamName } from './config.js';
+  TEAM_COLORS, TEAM_DEFAULT_NAMES, TEAM_COUNTS, HILL, cleanTeamName } from './config.js';
 import { saveBindings, devices } from './input.js';
 import { padLabel, PAD_RESERVED } from './padmap.js';
 import { lookupGroup, donateUrl, REWARDS } from './fundraiser.js';
@@ -19,7 +19,7 @@ export function moveSummary(def) {
 export function defaultSetup() {
   return {
     count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, quality: 'auto', music: 70, sfx: 90,
-    players: 1, touch: 'auto', touchSize: 1,
+    players: 1, touch: 'auto', touchSize: 1, game: 'brawl',
     teams: { count: 0, names: [...TEAM_DEFAULT_NAMES] },
     slots: Array.from({ length: 8 }, (_, i) => ({ control: i === 0 ? 0 : 'cpu', fighter: i % ROSTER.length, team: i % 4 })),
   };
@@ -40,7 +40,7 @@ export function saveSetup(s) { try { localStorage.setItem(SETUP_KEY, JSON.string
 
 const SUDDEN = [0, 45, 60, 75, 90, 120];
 // everything that starts or joins a fight needs a signed-in account (main.js sets menus.account)
-const LOGIN_GATED = new Set(['to-setup', 'to-online', 'to-tourney', 'to-training', 'start', 'rematch', 'net-host', 'net-join', 'net-queue', 't-join-fight']);
+const LOGIN_GATED = new Set(['to-setup', 'to-online', 'to-tourney', 'to-training', 'to-arcade', 'start', 'rematch', 'net-host', 'net-join', 'net-queue', 'net-requeue', 't-join-fight']);
 const DIFFS = Object.keys(DIFFICULTY);
 const CONTROLS = [0, 1, 2, 3, 'cpu'];
 const QUALITY = ['auto', 'high', 'low'];
@@ -382,7 +382,8 @@ export class Menus {
   buildMatchSetup() {
     const s = this.setup;
     return {
-      mode: 'cpu', winsNeeded: s.winsNeeded, difficulty: s.difficulty, suddenDeath: s.suddenDeath, quality: s.quality,
+      mode: s.game === 'hill' ? 'hill' : 'cpu', winsNeeded: s.winsNeeded, difficulty: s.difficulty,
+      suddenDeath: s.game === 'hill' ? 0 : s.suddenDeath, quality: s.quality,
       teams: { count: 0, names: [] },
       slots: s.slots.slice(0, s.count).map((x, i) => ({ ...x, control: i < this.players ? i : 'cpu', team: -1, reward: i === 0 ? this.rewardTier : 0 })),
     };
@@ -393,8 +394,9 @@ export class Menus {
     const key = el.dataset.opt, i = +el.dataset.i;
     const cyc = (arr, v) => arr[(arr.indexOf(v) + d + arr.length) % arr.length];
     if (['touch', 'touchsize', 'rumble', 'seat'].includes(key)) { this.changeDevice(el, d); return; }
-    if (!['count', 'wins', 'diff', 'sudden', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team', 'players'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
+    if (!['game', 'count', 'wins', 'diff', 'sudden', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team', 'players'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
     switch (key) {
+      case 'game': s.game = s.game === 'hill' ? 'brawl' : 'hill'; break;
       case 'count': s.count = Math.min(8, Math.max(2, s.players, s.count + d)); break;
       case 'players': s.players = Math.min(4, Math.max(1, s.players + d)); s.count = Math.max(s.count, s.players, 2); break;
       case 'wins': s.winsNeeded = Math.min(5, Math.max(1, s.winsNeeded + d)); break;
@@ -434,11 +436,12 @@ export class Menus {
       `<button class="nav opt row" data-opt="${key}" ${extra}><span class="lbl">${label}</span><span class="val"><i>‹</i>${value}<i>›</i></span></button>`;
     const rules = this.screens.setup.querySelector('.rules');
     rules.innerHTML = [
+      opt('game', 'Mode', s.game === 'hill' ? 'King of the hill' : 'Last one standing'),
       opt('players', 'Players here', this.players === 1 ? 'Just you' : `${this.players} players`),
       opt('count', 'CPU opponents', s.count - this.players),
       opt('wins', 'Rounds to win', s.winsNeeded),
       opt('diff', 'CPU skill', DIFFICULTY[s.difficulty].label),
-      opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
+      s.game === 'hill' ? '' : opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
       opt('quality', 'Graphics', { auto: 'Auto', high: 'High', low: 'Low' }[s.quality]),
       opt('music', 'Music', s.music ? `${s.music}%` : 'Off'),
       opt('sfx', 'Sound effects', s.sfx ? `${s.sfx}%` : 'Off'),
@@ -470,7 +473,7 @@ export class Menus {
     this.screens.setup.querySelector('.setup-note').textContent = (this.players === 1
       ? `You against ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}`
       : `${this.players} players${cpus ? ` and ${cpus} CPU ${cpus === 1 ? 'fighter' : 'fighters'}` : ''}, everyone for themselves`) +
-      ', last one standing takes the round. Press Enter on a fighter to see them up close and change their look.';
+      (s.game === 'hill' ? `. Hold the glowing ring alone to score; first to ${HILL.target} takes the round, and knocked-out fighters are back in a few seconds.` : ', last one standing takes the round.') + ' Press Enter on a fighter to see them up close and change their look.';
   }
 
   updateTeamLabels() {

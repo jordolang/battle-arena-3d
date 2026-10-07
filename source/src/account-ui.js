@@ -20,12 +20,14 @@ function when(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function statTiles(s, rank) {
+function statTiles(s, rank, rating, rankedGames = 0) {
   const tiles = [
     ['Wins', n(s.wins)], ['Losses', n(s.losses)], ['Win rate', `${s.winRate}%`], ['Knockouts', n(s.knockouts)],
     ['Rounds won', n(s.roundsWon)], ['Damage dealt', n(s.damage)], ['Win streak', n(s.currentStreak)], ['Best streak', n(s.bestStreak)],
   ];
   if (rank) tiles.unshift(['All-time rank', `#${n(rank)}`]);
+  // ranked 1v1 rating, once the website keeps one
+  if (Number.isFinite(rating)) tiles.unshift(['Ranked rating', `${Math.round(rating)}${rankedGames < 10 ? '?' : ''}`]);
   return tiles.map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
 }
 
@@ -136,7 +138,7 @@ export class AccountMenus {
     ].filter(Boolean).join(' · ');
     const input = el.querySelector('#prof-handle');
     if (document.activeElement !== input) input.value = p.handle;
-    el.querySelector('.prof-stats').innerHTML = statTiles(p.stats, p.rank);
+    el.querySelector('.prof-stats').innerHTML = statTiles(p.stats, p.rank, p.rating, p.rankedGames);
     el.querySelector('.prof-matches tbody').innerHTML = matchRows(prof.recentMatches, 7);
     this.renderTeamPicker();
   }
@@ -244,7 +246,7 @@ export class AccountMenus {
     try {
       const { player: p, recentMatches } = await this.account.player(handle);
       el.querySelector('.pl-sub').textContent = [p.team ? `Fights for ${p.team.name}` : 'No fundraising group', p.favouriteFighter ? `Main: ${fighterName(p.favouriteFighter)}` : ''].filter(Boolean).join(' · ');
-      el.querySelector('.pl-stats').innerHTML = statTiles(p.stats, p.rank);
+      el.querySelector('.pl-stats').innerHTML = statTiles(p.stats, p.rank, p.rating, p.rankedGames);
       el.querySelector('tbody').innerHTML = matchRows(recentMatches, 5);
     } catch (err) { el.querySelector('.pl-sub').textContent = err.message; }
   }
@@ -257,5 +259,10 @@ export class AccountMenus {
     el.textContent = r.won
       ? `Win recorded for ${this.account.handle}${r.streak > 1 ? ` · ${r.streak} wins in a row` : ''}.`
       : `Recorded for ${this.account.handle}: ${r.knockouts} KO${r.knockouts === 1 ? '' : 's'}. Get the next one.`;
+    // ranked 1v1: the new rating and how far it moved
+    if (Number.isFinite(r.rating)) {
+      const d = Math.round(r.ratingDelta || 0);
+      el.insertAdjacentHTML('beforeend', ` Rating <b>${Math.round(r.rating)}</b> <span class="${d >= 0 ? 'delta-up' : 'delta-down'}">(${d >= 0 ? '+' : ''}${d})</span>.`);
+    }
   }
 }

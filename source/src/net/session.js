@@ -19,7 +19,7 @@ import { EMOTE_IDS, ChatGate, cleanChat } from '../social.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 10;
+export const PROTOCOL = 11;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -167,6 +167,7 @@ export class NetSession {
     this.onMatchStart = () => {};
     this.onLeft = () => {};
     this.onChat = () => {};
+    this.onAccount = () => {}; // guests: seat tickets and recorded results from the host (account.js)
     this.onQuickChat = () => {}; // (fighter slot, line index) during a match (social.js)
     this.chatGate = new ChatGate();
     this.unhook = [];
@@ -715,6 +716,11 @@ export class NetSession {
     this.onMatchStart();
   }
 
+  // Host: a message for one guest (if still in the room).
+  sendTo(id, msg) {
+    if (this.isHost && this.lobby?.members.some((m) => m.id === id)) this.transport.send(id, msg);
+  }
+
   // Back to the lobby after a match (or from the results screen).
   backToLobby() {
     if (!this.isHost) return;
@@ -891,6 +897,9 @@ export class NetSession {
           if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
           this.onChat(msg.m);
         }
+        break;
+      case 'acct':
+        this.onAccount(msg);
         break;
       case 'bye':
         // a host who closes their room in the lobby closes it for everyone; otherwise the room moves on

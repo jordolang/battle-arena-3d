@@ -2,7 +2,7 @@
 // frame; like the keyboard, presses are counted so a fixed-step simulation never misses
 // a tap. Pads also drive the menus (D-pad or stick to move, A to pick, B to go back,
 // Start to pause) and rumble when their fighter gets hit.
-import { ACTIONS } from './config.js';
+import { ACTIONS, SOCIAL_ACTIONS } from './config.js';
 import { PAD_DEFAULTS, PAD_RESERVED, padFamily, padName } from './padmap.js';
 
 const MAP_KEY = 'battle-arena.padmap.v1';
@@ -122,7 +122,8 @@ export class Gamepads {
     // View goes back in menus; in a fight the page decides (pause, or skip a tutorial lesson)
     if (code === 'b8') { this.emitKey(inMenu ? 'Escape' : 'View'); return; }
     // stick clicks are free by default; the practice room uses them for its own commands
-    if (!inMenu && (code === 'b10' || code === 'b11') && !ACTIONS.some((a) => this.map[a] === code)) { this.emitKey(code === 'b10' ? 'L3' : 'R3'); return; }
+    // (taunting and the emote menu sit on them too, and give way in the practice room)
+    if (!inMenu && (code === 'b10' || code === 'b11') && !ACTIONS.some((a) => !SOCIAL_ACTIONS.has(a) && this.map[a] === code)) { this.emitKey(code === 'b10' ? 'L3' : 'R3'); return; }
     if (inMenu || mode === 'spectate') {
       if (NAV[code]) { st.rep.set(code, performance.now() + REPEAT_DELAY); this.emitKey(NAV[code]); return; }
     }

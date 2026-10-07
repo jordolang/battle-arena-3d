@@ -323,7 +323,7 @@ button { font: inherit; color: inherit; }
 /* ---------- Online ---------- */
 .net-plate { width: min(720px, 100%); }
 .net-form { display: flex; flex-direction: column; gap: 16px; }
-.net-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.net-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
 @media (max-width: 620px) { .net-choice { grid-template-columns: minmax(0, 1fr); } }
 .net-card {
   display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0;
@@ -978,3 +978,59 @@ body.touch-fight .coach-btn kbd { display: none; }
   .pr-row { grid-template-columns: auto 48px minmax(60px, 1fr); }
   .pr-v { grid-column: 1 / -1; }
 }
+
+/* ---- emotes and quick chat (social.js) ---- */
+.tag .say {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  padding: 4px 10px; border-radius: 10px; background: rgba(245, 238, 226, 0.95); color: #1a1214;
+  font-size: 14px; letter-spacing: 0.02em; text-transform: none; text-shadow: none; font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); animation: say-pop 0.18s ease-out, say-out 0.4s ease-in 2.2s forwards;
+}
+.tag .say::after {
+  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+  border: 5px solid transparent; border-top-color: rgba(245, 238, 226, 0.95);
+}
+.tag .say.taunt { background: var(--ember); color: #fff; font-style: italic; }
+.tag .say.taunt::after { border-top-color: var(--ember); }
+@keyframes say-pop { from { transform: translateX(-50%) scale(0.6); opacity: 0; } }
+@keyframes say-out { to { opacity: 0; transform: translateX(-50%) translateY(-6px); } }
+#comms {
+  position: fixed; left: 50%; bottom: 200px; transform: translateX(-50%); z-index: 30;
+  min-width: min(420px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  background: var(--plate); border: 1px solid var(--plate-edge); border-radius: 6px; padding: 8px 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+#comms .cm-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ash); margin-bottom: 6px; }
+#comms .cm-head b { color: var(--gold); letter-spacing: 0.12em; text-transform: uppercase; }
+#comms .cm-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+#comms .cm-item {
+  font: inherit; font-size: 16px; font-weight: 600; text-align: left; color: var(--bone); cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 6px 8px;
+}
+#comms .cm-item:hover { border-color: var(--ember); }
+#comms .cm-item.emote { color: var(--gold); }
+#comms .cm-item kbd { margin-right: 6px; }
+
+/* ---- friends (friends.js) ---- */
+.fr-add { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.fr-add .field { flex: 0 1 360px; width: auto; }
+.fr-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; max-height: 42vh; overflow-y: auto; }
+.fr-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: rgba(255, 255, 255, 0.04); border-radius: 4px; flex-wrap: wrap; }
+.fr-row .fr-who { flex: 1 1 160px; min-width: 0; }
+.fr-row .fr-who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-row .fr-who small { color: var(--ash); }
+.fr-dot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex: none; }
+.fr-dot.on { background: #6bff8f; box-shadow: 0 0 6px #6bff8f; }
+.fr-dot.room { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.fr-row .nav { padding: 4px 10px; font-size: 14px; }
+.fr-empty { color: var(--ash); font-style: italic; padding: 4px 0; }
+.fr-msg { min-height: 1.2em; color: var(--ash); }
+.fr-msg.bad { color: #ff8a7a; }
+#fr-invite-toast {
+  position: fixed; right: 16px; bottom: 16px; z-index: 40; max-width: min(360px, calc(100vw - 32px));
+  background: var(--plate); border: 1px solid var(--gold); border-radius: 6px; padding: 10px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+#fr-invite-toast span { flex: 1 1 180px; }
+#fr-invite-toast button { font: inherit; font-weight: 700; cursor: pointer; border-radius: 4px; padding: 4px 10px; border: 1px solid var(--plate-edge); background: rgba(255, 255, 255, 0.06); color: var(--bone); }
+#fr-invite-toast button.go { background: var(--ember); color: #fff; border-color: var(--ember); }

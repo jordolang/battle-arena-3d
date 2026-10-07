@@ -11,6 +11,8 @@ export const PAD_DEFAULTS = {
   skill1: 'a3-', skill2: 'a2-', skill3: 'a2+',
   use: 'b5', cycle: 'b4',
   slot1: 'b12', slot2: 'b15', slot3: 'b13', slot4: 'b14',
+  // clicking the sticks: right taunts, left opens emotes and quick chat (the D-pad then picks)
+  taunt: 'b11', comms: 'b10',
 };
 
 // Start and View/Share are kept for pausing, so they cannot be bound to fighting.

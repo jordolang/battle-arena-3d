@@ -15,10 +15,11 @@ import { Projectile } from '../specials.js';
 import { events } from '../events.js';
 import { createTransport, createBeacon, TransportError } from './transport.js';
 import { Predictor } from './predict.js';
+import { EMOTE_IDS, ChatGate, cleanChat } from '../social.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 9;
+export const PROTOCOL = 10;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -45,7 +46,7 @@ const HOST_TIMEOUT = 4000;    // ms without a snapshot mid-match before a guest 
 const RETURN_GRACE = 7000;    // ms the other players get to reconnect to a new host
 const DEEP_EVERY = 15;        // every 15th snapshot also carries the timers a new host would need
 
-export const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill'];
+export const STATES = ['idle', 'attack', 'special', 'block', 'blockstun', 'hitstun', 'guardbreak', 'frozen', 'knockdown', 'getup', 'victory', 'ko', 'dodge', 'skill', 'emote'];
 const PHASES = ['idle', 'intro', 'fight', 'roundOver', 'matchOver'];
 const MOVE_NAMES = Object.keys(MOVES);
 const PROJECTILES = {
@@ -58,7 +59,7 @@ const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'teleg
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
-  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard'];
+  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard', 'emote', 'taunt'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -166,6 +167,8 @@ export class NetSession {
     this.onMatchStart = () => {};
     this.onLeft = () => {};
     this.onChat = () => {};
+    this.onQuickChat = () => {}; // (fighter slot, line index) during a match (social.js)
+    this.chatGate = new ChatGate();
     this.unhook = [];
     this.chat = [];
     this.beacon = null;
@@ -303,6 +306,9 @@ export class NetSession {
       case 'chat':
         if (member) this.hostChat(member, msg.x);
         break;
+      case 'qc':
+        this.hostQuickChat(id, msg.i);
+        break;
       case 'bye':
         this.dropPeer(id, 'left');
         break;
@@ -437,6 +443,23 @@ export class NetSession {
     if (!this.connected || this.kind !== 'tournament') return;
     if (this.isHost) this.hostChat(this.me, text);
     else this.transport.sendHost({ t: 'chat', x: cleanText(text, 200) });
+  }
+
+  // ---------------------------------------------------------------- quick chat (any online match)
+  // A fixed line (social.js QUICK_CHAT) over your fighter's head. The host checks it is a player
+  // in this match and not flooding, then tells everyone.
+  sendQuickChat(i) {
+    if (!this.connected || !this.lobby?.inMatch || cleanChat(i) < 0) return;
+    if (this.isHost) this.hostQuickChat('host', i);
+    else this.transport.sendHost({ t: 'qc', i });
+  }
+
+  hostQuickChat(id, i) {
+    if (!this.lobby?.inMatch || cleanChat(i) < 0) return;
+    const slot = this.spec?.fighters.findIndex((f) => f.owner === id) ?? -1;
+    if (slot < 0 || !this.chatGate.allow(id)) return;
+    this.transport.broadcast({ t: 'qc', s: slot, i });
+    this.onQuickChat(slot, i);
   }
 
   // ---------------------------------------------------------------- tournaments (host = admin)
@@ -755,6 +778,7 @@ export class NetSession {
         f.weapon ? WEAPON_IDS.indexOf(f.weapon) : -1, f.weaponHits, Math.round(f.plate), f.sel,
         f.items.flatMap((it) => [SKILL_IDS.indexOf(it.id), it.charges]),
         r2(f.vel.x), r2(f.vel.y), r2(f.vel.z),
+        f.state === 'emote' ? EMOTE_IDS.indexOf(f.emoteId) : -1,
       ]),
       // the last input the host applied for each remote player, so their own prediction can check itself
       a: g.fighters.map((f) => (f.controller instanceof NetController ? f.controller.seq : -1)),
@@ -855,6 +879,9 @@ export class NetSession {
       case 'fx':
         if (Array.isArray(msg.l)) for (const item of msg.l) this.fxQueue?.push({ ht: msg.ht, item });
         break;
+      case 'qc':
+        if (Number.isInteger(msg.s) && cleanChat(msg.i) >= 0) this.onQuickChat(msg.s, msg.i);
+        break;
       case 'chatlog':
         if (Array.isArray(msg.l)) { this.chat = msg.l.slice(-CHAT_KEEP); this.onChat(null); }
         break;
@@ -884,7 +911,7 @@ export class NetSession {
     this.lastRound = -1;
     this.lastPhase = -1;
     this.clientProjectiles = new Map();
-    this.input = { ctl: new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active), counts: NET_TAPS.map(() => 0), seq: 0, acc: 1 };
+    this.input = { ctl: new OnlineKeyboardController(this.keyboard, this.bindings, () => !!this.menus.active), counts: NET_TAPS.map(() => 0), seq: 0, acc: 1, emotes: 0, emote: -1 };
     this.game.net = this;
     this.menus.hideAll();
     this.game.startOnline(spec, 'client', null, you, this.bindings);
@@ -945,10 +972,11 @@ export class NetSession {
     const it = inp.ctl.getIntent(me, this.game);
     let tapped = false;
     NET_TAPS.forEach((a, i) => { if (it[a]) { inp.counts[i]++; tapped = true; } });
+    if (it.emote && EMOTE_IDS.includes(it.emote)) { inp.emotes++; inp.emote = EMOTE_IDS.indexOf(it.emote); tapped = true; }
     inp.acc += dt;
     if (!tapped && inp.acc < 1 / INPUT_HZ) return it;
     inp.acc = 0;
-    this.transport.sendHost({ t: 'in', s: ++inp.seq, mx: r2(it.mx), mz: r2(it.mz), b: it.block ? 1 : 0, d: it.dashHeld ? 1 : 0, c: inp.counts }, 'rt');
+    this.transport.sendHost({ t: 'in', s: ++inp.seq, mx: r2(it.mx), mz: r2(it.mz), b: it.block ? 1 : 0, d: it.dashHeld ? 1 : 0, c: inp.counts, e: [inp.emotes, inp.emote] }, 'rt');
     return it;
   }
 
@@ -1030,6 +1058,7 @@ export class NetSession {
         const id = SKILL_IDS[items[k]];
         if (SKILLS[id]?.item) f.items.push({ id, charges: num(items[k + 1]) });
       }
+      f.emoteId = EMOTE_IDS[fa[38]] || null;
       if (f.alive) f.model.ring.visible = true;
       f.updateBuffVisuals();
       if (!mine) f.syncVisual(flags & 16 ? 0 : dt, g);

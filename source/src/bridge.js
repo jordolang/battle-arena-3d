@@ -286,14 +286,17 @@ export class SkyBridge extends Stage {
   tickHazards(dt, game) {
     const t = this.clock(game);
     for (const tile of this.tiles) {
+      // (only fresh ones: a guest who takes over a running match as host doesn't replay the old cracks)
       if (t >= tile.crackAt && !this.cracked.has(tile)) {
         this.cracked.add(tile);
+        if (t - tile.crackAt > 0.5) continue;
         game.effects.dust(tile.x, tile.z, 0.8);
         game.events.emit('hazard', { kind: 'crack', x: tile.x, z: tile.z });
         this.tell(game, 'crack', '<b class="fire">The bridge</b> <span>is crumbling. Stay off the glowing stones.</span>');
       }
       if (t >= tile.fallAt && !this.dropped.has(tile)) {
         this.dropped.add(tile);
+        if (t - tile.fallAt > 0.5) continue;
         game.effects.dust(tile.x, tile.z, 2);
         game.shake(0.18);
         game.events.emit('hazard', { kind: 'collapse', x: tile.x, z: tile.z });

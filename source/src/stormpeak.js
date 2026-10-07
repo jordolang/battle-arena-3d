@@ -251,6 +251,7 @@ export class StormPeak extends Stage {
     STAGES.forEach(([t0], i) => {
       if (t >= t0 && !this.closing.has(i)) {
         this.closing.add(i);
+        if (t - t0 > 1) return;
         game.events.emit('hazard', { kind: 'storm', x: zn.x, z: zn.z });
         this.tell(game, `storm${i}`, '<b class="fire">The storm</b> <span>closes in. Get inside the ring.</span>');
       }

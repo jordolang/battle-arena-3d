@@ -1,10 +1,11 @@
-// Procedural articulated fighter: a jointed hierarchy of sculpted body parts with a
-// pose blender. No external assets, so it loads instantly. Faces, hands and muscled limbs
+// Procedural articulated fighter: a jointed hierarchy of sculpted body parts driven by
+// motion-captured clips (mocapData.js) plus hand-made poses for the moves no clip covers. Faces, hands and muscled limbs
 // are built from lathed profiles and merged per material, so each fighter stays at about
 // thirty draw calls however much detail it carries.
 import * as THREE from 'three';
 import { buildGear, buildArmor } from './items.js';
 import { swayCape } from './wardrobeModels.js';
+import { MOCAP, MOCAP_FPS } from './mocapData.js';
 
 const geoCache = new Map();
 function geo(key, make) {
@@ -292,7 +293,7 @@ export function animateLife(model, f, dt, lookAt) {
   let want = 0;
   if (lookAt !== null && f.alive) want = Math.max(-0.75, Math.min(0.75, wrap(lookAt - f.facing)));
   model.lookYaw += (want - model.lookYaw) * Math.min(1, dt * 6);
-  model.joints.head.rotation.y += model.lookYaw;
+  model.joints.head.rotateY(model.lookYaw);
   const speed = Math.hypot(f.vel.x, f.vel.z);
   const swing = Math.min(1.2, speed * 0.12) + Math.sin(f.animTime * 9) * Math.min(0.15, speed * 0.02);
   model.tails.rotation.x += (swing - model.tails.rotation.x) * Math.min(1, dt * 8);
@@ -570,40 +571,118 @@ export function victoryPose(t, kind = 'fist') {
   }
 }
 
+// ---- Motion capture ----------------------------------------------------
+// Clips are decoded once into floats: per frame, 12 joint quaternions (JOINTS order) then the hip lift.
+const STRIDE = JOINTS.length * 4 + 1;
+const CLIPS = {};
+for (const [name, c] of Object.entries(MOCAP)) {
+  const bin = atob(c.data), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const raw = new Int16Array(bytes.buffer), f = new Float32Array(raw.length);
+  for (let i = 0; i < raw.length; i++) f[i] = raw[i] / (i % STRIDE === STRIDE - 1 ? 10000 : 32767);
+  CLIPS[name] = { f, n: c.n, loop: c.loop, hit: c.hit ?? 0, dur: (c.loop ? c.n : c.n - 1) / MOCAP_FPS };
+}
+// which clip each attack plays (the CMU actor fights orthodox: left jab, right cross)
+const ATTACK_CLIP = { jab1: 'cross', jab2: 'jab', hook: 'power', kick1: 'frontkick', kick2: 'roundhouse', airkick: 'flykick' };
+
+// A target pose: joint quaternions packed in JOINTS order, plus the hip lift.
+const newPose = () => ({ q: new Float32Array(JOINTS.length * 4), lift: 0 });
+const _eq = new THREE.Quaternion(), _ee = new THREE.Euler();
+
+function sampleClip(out, name, t) {
+  const c = CLIPS[name];
+  let fr = t * MOCAP_FPS;
+  if (c.loop) fr = ((fr % c.n) + c.n) % c.n; else fr = Math.max(0, Math.min(c.n - 1, fr));
+  const i0 = Math.floor(fr), i1 = c.loop ? (i0 + 1) % c.n : Math.min(c.n - 1, i0 + 1), w = fr - i0;
+  const a = i0 * STRIDE, b = i1 * STRIDE, q = out.q, f = c.f;
+  for (let j = 0; j < q.length; j += 4) {
+    const s = f[a + j] * f[b + j] + f[a + j + 1] * f[b + j + 1] + f[a + j + 2] * f[b + j + 2] + f[a + j + 3] * f[b + j + 3] < 0 ? -1 : 1;
+    let x = f[a + j] * (1 - w) + s * f[b + j] * w, y = f[a + j + 1] * (1 - w) + s * f[b + j + 1] * w;
+    let z = f[a + j + 2] * (1 - w) + s * f[b + j + 2] * w, ww = f[a + j + 3] * (1 - w) + s * f[b + j + 3] * w;
+    const l = 1 / Math.hypot(x, y, z, ww);
+    q[j] = x * l; q[j + 1] = y * l; q[j + 2] = z * l; q[j + 3] = ww * l;
+  }
+  out.lift = f[a + STRIDE - 1] * (1 - w) + f[b + STRIDE - 1] * w;
+  return out;
+}
+
+// a hand-made pose ({ joint: [x, y, z] euler, lift }) in the packed form
+function fromEuler(out, p) {
+  JOINTS.forEach((k, i) => { const e = p[k]; _eq.setFromEuler(e ? _ee.set(e[0], e[1], e[2]) : _ee.set(0, 0, 0)).toArray(out.q, i * 4); });
+  out.lift = p.lift ?? 0;
+  return out;
+}
+
+// blends b into a by t (in place on a)
+function blendInto(a, b, t) {
+  const q = a.q, r = b.q;
+  for (let j = 0; j < q.length; j += 4) {
+    const s = q[j] * r[j] + q[j + 1] * r[j + 1] + q[j + 2] * r[j + 2] + q[j + 3] * r[j + 3] < 0 ? -t : t;
+    const x = q[j] * (1 - t) + r[j] * s, y = q[j + 1] * (1 - t) + r[j + 1] * s, z = q[j + 2] * (1 - t) + r[j + 2] * s, w = q[j + 3] * (1 - t) + r[j + 3] * s;
+    const l = 1 / Math.hypot(x, y, z, w);
+    q[j] = x * l; q[j + 1] = y * l; q[j + 2] = z * l; q[j + 3] = w * l;
+  }
+  a.lift += (b.lift - a.lift) * t;
+  return a;
+}
+
+// Clip time for an attack: the windup plays up to just before contact, the active window holds
+// the moment of contact and the recovery plays out the rest of the clip.
+function attackTime(c, p) {
+  const h0 = Math.max(0, c.hit - 0.05), h1 = Math.min(c.dur, c.hit + 0.05);
+  if (p < 1) return h0 * p;
+  if (p < 2) return h0 + (h1 - h0) * (p - 1);
+  return h1 + (c.dur - h1) * Math.min(1, p - 2);
+}
+
+function locomotion(out, tmp, f) {
+  sampleClip(out, 'idle', f.animTime);
+  if (f.moveAmount > 0.02) blendInto(out, sampleClip(tmp, 'run', f.runPhase / (Math.PI * 2) * CLIPS.run.dur), Math.min(1, f.moveAmount * 1.3));
+  return out;
+}
+
+// Works out the pose a fighter is aiming for this frame. Buffers live on the model so nothing is
+// allocated per frame.
 export function computePose(f) {
+  const m = f.model;
+  const P = m.poseBuf ||= [newPose(), newPose()];
+  const [out, tmp] = P;
   const t = f.animTime;
   switch (f.state) {
-    case 'attack': return attackPose(f.move, f.attackSide, f.attackPhase);
-    case 'special': return specialPose(f.def.special, f.specialPhase);
-    case 'skill': return specialPose(f.skill?.pose || 'fireball', f.specialPhase);
-    case 'dodge': return dodgePose;
-    case 'block': return blockPose;
-    case 'hitstun': case 'blockstun': case 'guardbreak': {
-      const w = Math.sin(Math.min(1, f.stateTime / 0.12) * Math.PI * 0.5);
-      const base = f.state === 'blockstun' ? blockPose : hurtPose;
-      return f.state === 'guardbreak' ? mix(hurtPose, { ...hurtPose, head: [0.5, Math.sin(t * 7) * 0.4, 0], spine: [0.4, 0, 0], lift: -0.2 }, 0.7) : mix(idlePose(t), base, w);
+    case 'attack': {
+      const name = ATTACK_CLIP[f.moveName];
+      if (name) return sampleClip(out, name, attackTime(CLIPS[name], f.attackPhase));
+      return fromEuler(out, attackPose(f.move, f.attackSide, f.attackPhase));
     }
-    case 'knockdown': case 'ko': case 'getup': return downPose;
-    case 'frozen': return frozenPose;
-    case 'victory': return victoryPose(t, f.model?.victory);
+    case 'special': return fromEuler(out, specialPose(f.def.special, f.specialPhase));
+    case 'skill': return fromEuler(out, specialPose(f.skill?.pose || 'fireball', f.specialPhase));
+    case 'dodge': return sampleClip(out, 'duck', Math.min(1, f.stateTime / (f.stateDuration || 0.34)) * CLIPS.duck.dur);
+    case 'block': return fromEuler(out, blockPose);
+    case 'hitstun': case 'blockstun': case 'guardbreak': {
+      if (f.state === 'guardbreak') return fromEuler(out, mix(hurtPose, { ...hurtPose, head: [0.5, Math.sin(t * 7) * 0.4, 0], spine: [0.4, 0, 0], lift: -0.2 }, 0.7));
+      const w = Math.sin(Math.min(1, f.stateTime / 0.12) * Math.PI * 0.5);
+      return blendInto(sampleClip(out, 'idle', t), fromEuler(tmp, f.state === 'blockstun' ? blockPose : hurtPose), w);
+    }
+    case 'knockdown': case 'ko': case 'getup': return fromEuler(out, downPose);
+    case 'frozen': return fromEuler(out, frozenPose);
+    case 'victory': return fromEuler(out, victoryPose(t, m.victory));
     default:
-      if (!f.grounded) return jumpPose;
-      return runPose(f.runPhase, f.moveAmount);
+      if (!f.grounded) {
+        // the jump clip runs from take-off to landing, following the fighter's actual rise and fall
+        const u = Math.max(0, Math.min(1, 0.5 - (f.vel.y ?? 0) / 18.4));
+        return sampleClip(out, 'jump', u * CLIPS.jump.dur);
+      }
+      return locomotion(out, tmp, f);
   }
 }
 
 // Blend each joint toward the target pose with critically damped smoothing.
 export function applyPose(model, target, dt, sharp) {
   const k = 1 - Math.exp(-(sharp ? 34 : 16) * dt);
-  for (const name of JOINTS) {
-    const tv = target[name] || [0, 0, 0];
-    const cur = model.current[name];
-    cur.x += (tv[0] - cur.x) * k;
-    cur.y += (tv[1] - cur.y) * k;
-    cur.z += (tv[2] - cur.z) * k;
-    model.joints[name].rotation.set(cur.x, cur.y, cur.z);
-  }
-  const lift = target.lift ?? 0;
-  model.current.lift = (model.current.lift ?? 0) + (lift - (model.current.lift ?? 0)) * k;
-  model.joints.hips.position.y = model.hipsBaseY + model.current.lift;
+  // smoothed rotations are kept apart from the joints, which also carry extras like the head's glance
+  const S = model.smoothQ ||= JOINTS.map(() => new THREE.Quaternion());
+  for (let i = 0; i < JOINTS.length; i++) model.joints[JOINTS[i]].quaternion.copy(S[i].slerp(_eq.fromArray(target.q, i * 4), k));
+  const cur = model.current;
+  cur.lift = (cur.lift ?? 0) + (target.lift - (cur.lift ?? 0)) * k;
+  model.joints.hips.position.y = model.hipsBaseY + cur.lift;
 }

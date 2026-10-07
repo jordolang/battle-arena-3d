@@ -14,7 +14,7 @@ import { createTransport, createBeacon, TransportError } from './transport.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 7;
+export const PROTOCOL = 8;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -142,6 +142,7 @@ export class NetSession {
     this.onMatchStart = () => {};
     this.onLeft = () => {};
     this.onChat = () => {};
+    this.onAccount = () => {}; // guests: seat tickets and recorded results from the host (account.js)
     this.unhook = [];
     this.chat = [];
     this.beacon = null;
@@ -609,6 +610,11 @@ export class NetSession {
     this.onMatchStart();
   }
 
+  // Host: a message for one guest (if still in the room).
+  sendTo(id, msg) {
+    if (this.isHost && this.lobby?.members.some((m) => m.id === id)) this.transport.send(id, msg);
+  }
+
   // Back to the lobby after a match (or from the results screen).
   backToLobby() {
     if (!this.isHost) return;
@@ -749,6 +755,9 @@ export class NetSession {
           if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
           this.onChat(msg.m);
         }
+        break;
+      case 'acct':
+        this.onAccount(msg);
         break;
       case 'bye':
         this.leave('The host closed the room.');

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { ROSTER, SPECIALS, SKILLS } from './config.js';
 import { buildFighterModel, computePose, applyPose, animateLife } from './fighterModel.js';
 import { dressFighter } from './wardrobeModels.js';
+import { isHandheld } from './perf.js';
 import { wardrobe, bodyDef, BODY, BODY_KEYS, ITEMS, SLOTS, SLOT_LABELS, RARITY, DEFAULT_LOOK, ITEM_COUNT, outfitColors, sanitizeLook } from './cosmetics.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -366,7 +367,7 @@ export class CharacterSelect {
     const key = new THREE.DirectionalLight(0xffd2a0, 2.6);
     key.position.set(2.5, 4.5, 3.5);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.setScalar(isHandheld() ? 512 : 1024);
     Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 2.5, bottom: -0.5, near: 1, far: 12 });
     scene.add(key);
     const rim = new THREE.DirectionalLight(0xff6a2a, 2.2);
@@ -459,7 +460,7 @@ export class CharacterSelect {
     const r = this.renderer;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = Math.min(window.devicePixelRatio || 1, isHandheld() ? 1.5 : 2);
     if (this.size !== `${w}x${h}@${pr}`) {
       this.size = `${w}x${h}@${pr}`;
       r.setPixelRatio(pr);

@@ -547,6 +547,9 @@ button { font: inherit; color: inherit; }
 #belts.compact .belt-toast b { font-size: 18px; }
 @media (max-width: 720px) { .belt { --orb: 60px; --slot: 38px; } .belt-keys { display: none; } }
 
+/* the lower graphics tiers (src/perf.js) drop the blur behind panels, which phones redo every frame over the live scene */
+.perf-lite .plate, .perf-lite .cs { backdrop-filter: none; background: rgba(18, 14, 16, 0.94); }
+
 /* ---------- Character select & locker room ---------- */
 #screen-select { padding: 16px; }
 .cs {

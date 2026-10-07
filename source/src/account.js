@@ -143,27 +143,32 @@ export class Account {
   removeFriend(handle) { return this.call(`/api/arena/friends/${encodeURIComponent(handle)}`, { method: 'DELETE' }); }
   inviteFriend(handle, room) { return this.call('/api/arena/friends/invites', { method: 'POST', body: { handle, room } }); }
 
-  // Reports matches to the website. A match opens when its first round starts and is closed
-  // with this browser's own fighter's result when it ends. Watching, demos, training and guests record nothing.
+  // Reports matches to the website, which keeps the leaderboards.
+  //  - Against the CPU this browser reports its own fighter's result (the website keeps those on the
+  //    profile but leaves them off the online boards).
+  //  - Online, only the host reports. When the first round starts the host opens the match on the
+  //    website, which hands back one secret ticket per player seat. The host sends each guest its
+  //    own ticket and the guest claims that seat with its own sign-in, so the website knows which
+  //    accounts really played. When the match ends the host reports every seat's result in one go;
+  //    the website records it for the accounts that claimed a seat and refuses any other report.
+  // Watching, demos, training and guests record nothing.
   track({ events, game, session, onResult }) {
     let cur = null;
     events.on('roundStart', (d) => {
-      if (game.mode !== 'match' || game.setup?.mode === 'practice') return;
-      if (d.round === 1 || !cur) cur = this.openMatch(game, session);
+      if (game.mode !== 'match' || game.setup?.mode === 'practice' || game.online === 'client') return;
+      if (d.round === 1 || !cur) cur = game.online === 'host' ? this.openHostedMatch(game, session) : this.openMatch(game, session);
       if (cur) cur.rounds = Math.max(cur.rounds + 1, d.round || 0);
     });
     events.on('matchEnd', ({ winner }) => {
+      if (game.online === 'client') { // the host reports for guests; its word may beat the knockout here
+        const early = this.hostedResult; this.hostedResult = null;
+        if (early) setTimeout(() => onResult?.(early), 0);
+        return;
+      }
       const m = cur; cur = null;
       if (!m || game.mode !== 'match') return;
-      const me = m.fighter;
-      const won = !!winner && (winner === me || (me.team >= 0 && winner.team === me.team));
-      const result = {
-        won,
-        roundsWon: Math.min(5, me.stats.wins),
-        rounds: Math.max(1, m.rounds, me.stats.wins),
-        knockouts: me.stats.kos,
-        damage: Math.round(me.stats.damage),
-      };
+      if (m.hosted) { this.reportHostedMatch(m, game, session, winner, onResult); return; }
+      const result = seatResult(m.fighter, winner, m.rounds);
       m.id.then((id) => (id ? this.call(`/api/arena/matches/${encodeURIComponent(id)}`, { method: 'POST', body: result }) : null))
         .then((r) => {
           if (!r) return;
@@ -172,21 +177,108 @@ export class Account {
         })
         .catch((err) => onResult?.({ ...result, recorded: false, reason: err.message }));
     });
+    // a guest hears about the match from the host: first its seat ticket, then the recorded results
+    session.onAccount = (msg) => this.guestMessage(msg, game, onResult);
   }
 
   openMatch(game, session) {
     if (!this.recording) return null;
-    const me = game.online ? game.localFighter : game.fighters.find((f) => f.isHuman && f.controller.playerIndex === 0);
+    const me = game.fighters.find((f) => f.isHuman && f.controller.playerIndex === 0);
     if (!me) return null;
-    const kind = game.online ? session?.kind : 'cpu';
-    const room = String(session?.lobby?.code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
-    const body = {
-      mode: MODE[kind] || (game.online ? 'ONLINE' : 'CPU'),
-      fighter: me.def.id,
-      opponents: Math.max(1, Math.min(7, game.fighters.length - 1)),
-      ...(game.online && room ? { room } : {}),
-    };
+    const body = { mode: 'CPU', fighter: me.def.id, opponents: Math.max(1, Math.min(7, game.fighters.length - 1)) };
     const id = this.call('/api/arena/matches', { method: 'POST', body }).then((r) => r.matchId).catch((err) => { console.warn('[account] match not recorded:', err.message); return null; });
     return { id, fighter: me, rounds: 0 };
   }
+
+  // Host: opens the match on the website and sends every guest its seat ticket.
+  openHostedMatch(game, session) {
+    if (!this.recording || !session?.spec) return null;
+    const owners = session.spec.fighters.map((f) => f.owner || null);
+    const seats = owners.flatMap((o, i) => (o ? [i] : []));
+    const hostSeat = owners.indexOf('host');
+    const body = {
+      mode: session.queueRules?.rated ? 'RANKED' : MODE[session.kind] || 'ONLINE',
+      room: roomCode(session),
+      fighters: game.fighters.length,
+      seats,
+      hostSeat,
+      fighter: hostSeat >= 0 ? game.fighters[hostSeat].def.id : null,
+      seatFighters: seats.map((i) => game.fighters[i].def.id),
+    };
+    const m = { hosted: true, rounds: 0, owners, matchId: null };
+    m.id = this.call('/api/arena/hosted-matches', { method: 'POST', body })
+      .then((r) => {
+        m.matchId = r.matchId;
+        for (const [seat, ticket] of Object.entries(r.tickets || {})) {
+          const owner = owners[+seat];
+          if (owner && owner !== 'host') session.sendTo(owner, { t: 'acct', a: 'seat', id: r.matchId, seat: +seat, ticket });
+        }
+        return r.matchId;
+      })
+      .catch((err) => { console.warn('[account] match not recorded:', err.message); return null; });
+    return m;
+  }
+
+  // Host: reports every player seat's result and passes the outcome on to each guest.
+  reportHostedMatch(m, game, session, winner, onResult) {
+    const results = m.owners.flatMap((o, seat) => (o ? [{ seat, fighter: game.fighters[seat].def.id, ...seatResult(game.fighters[seat], winner, m.rounds) }] : []));
+    const winnerSeat = winner ? game.fighters.indexOf(winner) : -1;
+    const body = { rounds: Math.max(1, m.rounds), winnerSeat, winnerTeam: winner && winner.team >= 0 ? winner.team : null, results };
+    const tell = (seat, r) => {
+      const owner = m.owners[seat];
+      if (owner === 'host') onResult?.(r);
+      else if (owner) session.sendTo(owner, { t: 'acct', a: 'result', id: m.matchId, r });
+    };
+    m.id.then((id) => {
+      if (!id) throw new AccountError('The website did not open this match.');
+      return this.call(`/api/arena/hosted-matches/${encodeURIComponent(id)}/report`, { method: 'POST', body });
+    }).then((r) => {
+      const recorded = new Map((r.recorded || []).map((x) => [x.seat, x]));
+      for (const res of results) {
+        const x = recorded.get(res.seat);
+        tell(res.seat, x ? { ...res, ...x, recorded: true } : { ...res, recorded: false, reason: x === undefined ? 'That player was not signed in when the match started.' : '' });
+      }
+      this.refresh();
+    }).catch((err) => {
+      for (const res of results) tell(res.seat, { ...res, recorded: false, reason: err.message });
+    });
+  }
+
+  // Guest: claims its seat with its own sign-in, then shows what the host's report recorded.
+  guestMessage(msg, game, onResult) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.a === 'seat' && typeof msg.id === 'string' && typeof msg.ticket === 'string') {
+      this.hostedResult = null;
+      if (!this.recording) { this.hosted = null; return; }
+      this.hosted = { id: msg.id, seat: msg.seat };
+      this.call(`/api/arena/hosted-matches/${encodeURIComponent(msg.id)}/join`, { method: 'POST', body: { ticket: msg.ticket, fighter: game.localFighter?.def.id || null } })
+        .catch((err) => { if (this.hosted?.id === msg.id) this.hosted.error = err.message; });
+    } else if (msg.a === 'result' && msg.r && typeof msg.r === 'object' && this.hosted?.id === msg.id) {
+      const r = msg.r, error = this.hosted.error;
+      this.hosted = null;
+      const shown = {
+        won: !!r.won, knockouts: Math.max(0, Math.floor(+r.knockouts || 0)), streak: Math.max(0, Math.floor(+r.streak || 0)),
+        recorded: !!r.recorded && !error, reason: String(error || r.reason || '').slice(0, 120),
+      };
+      // ranked: the website may add the player's new rating
+      for (const k of ['rating', 'ratingDelta']) if (Number.isFinite(r[k])) shown[k] = Math.round(r[k]);
+      if (game.phase === 'matchOver') onResult?.(shown); else this.hostedResult = shown;
+      if (shown.recorded) this.refresh();
+    }
+  }
+}
+
+// One fighter's result, for the website.
+function seatResult(f, winner, rounds) {
+  return {
+    won: !!winner && (winner === f || (f.team >= 0 && winner.team === f.team)),
+    roundsWon: Math.min(5, f.stats.wins),
+    rounds: Math.max(1, rounds, f.stats.wins),
+    knockouts: f.stats.kos,
+    damage: Math.round(f.stats.damage),
+  };
+}
+
+function roomCode(session) {
+  return String(session?.lobby?.code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24) || undefined;
 }

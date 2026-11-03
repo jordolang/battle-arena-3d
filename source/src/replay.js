@@ -1,20 +1,26 @@
-// Instant replay of the final knockout, and a short video clip of it to share.
+// Instant replay of the final knockout, the fight promo cam, and video clips of both to share.
 // During a match the last few seconds of every fighter's pose, the projectiles in flight, the effects
 // drawn and the sounds heard are kept in a small rolling buffer (a few floats per fighter, 30 times a
-// second). When the match ends that buffer is frozen around the deciding KO. Playing it drives the real
-// fighters through the recorded poses under a cinematic camera, slowing down for the knockout itself,
-// and only while it plays is the picture (and the game's sound) recorded into a video file.
+// second), along with any older stretch a highlight (highlights.js) covers. When the match ends the
+// buffer is frozen around the deciding KO, and the star's best moments are cut into a promo reel.
+// Playing either drives the real fighters through the recorded poses under a cinematic camera: the
+// knockout slows down for the final blow, and the reel drops into bullet time (near-frozen action,
+// the camera sweeping round the star) for every aerial play that counted. Only while one plays is the
+// picture (and the game's sound) recorded into a video file.
 import { MOVES, SKILLS, SKILL_IDS, WEAPON_IDS } from './config.js';
 import { Effects } from './effects.js';
 import { Projectile } from './specials.js';
 import { events } from './events.js';
 import { GAME_URL } from './share.js';
 import { STATES } from './net/session.js';
+import { Highlights } from './highlights.js';
 
 const HZ = 30;                       // poses kept per second of match time
 const KEEP = 14;                     // seconds of history held
 const BEFORE = 4.2, AFTER = 2.4;     // the clip: this long before the final KO and after it
 const SLOW = 0.3;                    // replay speed through the knockout itself
+const BULLET = 0.07;                 // the reel's speed at the heart of a bullet-time moment
+const BULLET_SPIN = 1.2;             // radians a second the camera sweeps round the star in bullet time
 const END_CARD = 1.6;                // seconds of title card closing the video
 const CLIP_EDGE = 1280;              // longest side of the recorded video, in pixels
 const MOVE_NAMES = Object.keys(MOVES);
@@ -82,7 +88,13 @@ export class Replay {
     this.lastT = -Infinity;
     this.lastKo = null;        // { t, victim, by } slots
     this.clip = null;          // the frozen final knockout
+    this.promo = null;         // the star's highlight reel: a list of clips
+    this.cur = null;           // the clip playing now
     this.video = null;         // { blob, url, type, name, seconds } once recorded
+    this.promoVideo = null;    // the same for the reel
+    this.highlights = new Highlights(game);
+    this.lastPrune = 0;
+    this.bullet = 0;           // 0..1, how deep into bullet time playback is
     this.playing = false;
     this.audioStream = null;   // () => MediaStream | null, set by main.js
     this.onVideo = null;       // called when a new clip file is ready
@@ -106,12 +118,15 @@ export class Replay {
     this.lastT = -Infinity;
     this.lastKo = null;
     this.clip = null;
+    this.promo = null;
+    this.highlights.reset();
   }
 
   // Called once per rendered frame of a match; samples poses HZ times per second of match time.
   record() {
     const g = this.game;
     if (g.mode !== 'match' || this.playing || !g.fighters.length) return;
+    this.highlights.update();
     const t = g.time;
     if (t - this.lastT < 1 / HZ) return;
     this.lastT = t;
@@ -121,10 +136,14 @@ export class Replay {
     for (const pr of g.projectiles) if (!pr.dead) p.push([pr.id, pr.kind, pr.pos.x, pr.pos.y, pr.pos.z, pr.dir.x, pr.dir.z, pr.owner?.slot ?? 0, pr.color, pr.size ?? 1, pr.stretch ?? 1]);
     for (const pr of g.net?.clientProjectiles?.values() || []) p.push([pr.id, pr.kind, pr.pos.x, pr.pos.y, pr.pos.z, pr.dir.x, pr.dir.z, pr.owner?.slot ?? 0, pr.color, pr.size ?? 1, pr.stretch ?? 1]);
     this.frames.push({ t, f, p, rr: g.ringRadius, ft: g.fightTime, rd: g.round });
-    const cut = t - KEEP;
-    while (this.frames.length && this.frames[0].t < cut) this.frames.shift();
-    while (this.fx.length && this.fx[0].t < cut) this.fx.shift();
-    while (this.ev.length && this.ev[0].t < cut) this.ev.shift();
+    // once a second, let go of what is older than the rolling window and no highlight covers
+    if (t - this.lastPrune < 1) return;
+    this.lastPrune = t;
+    const cut = t - KEEP, hl = this.highlights;
+    const keep = (x) => x.t >= cut || hl.covers(x.t);
+    this.frames = this.frames.filter(keep);
+    this.fx = this.fx.filter(keep);
+    this.ev = this.ev.filter(keep);
   }
 
   // The match is over: keep the seconds around the deciding knockout. Returns whether there is one.
@@ -149,17 +168,42 @@ export class Replay {
     return true;
   }
 
+  // The match is over: cut the star's best moments into a reel. Returns whether there is one.
+  capturePromo(caption = '') {
+    const g = this.game, star = this.highlights.star();
+    this.promo = null;
+    if (this.promoVideo) { URL.revokeObjectURL(this.promoVideo.url); this.promoVideo = null; }
+    if (!star) return false;
+    const clips = [];
+    for (const h of this.highlights.pick()) {
+      const frames = this.frames.filter((fr) => fr.t >= h.from - 0.05 && fr.t <= h.to + 0.05);
+      // a gap means part of the moment was never kept; skip it rather than jump
+      if (frames.length < 8 || frames.some((fr, i) => i && fr.t - frames[i - 1].t > 0.25)) continue;
+      clips.push({
+        promo: true, frames, from: frames[0].t, to: frames[frames.length - 1].t, peak: h.peak, koT: h.peak, bullet: h.bullet,
+        kind: h.kind, star: star.slot, caption, victim: -1, by: -1, fighters: g.fighters,
+        fx: this.fx.filter((x) => x.t >= h.from && x.t <= h.to),
+        ev: this.ev.filter((x) => x.t >= h.from && x.t <= h.to),
+      });
+    }
+    if (!clips.length) return false;
+    this.promo = clips;
+    return true;
+  }
+
   // The clip can be watched while its fighters are still on the field.
   get canPlay() { return !!this.clip && this.clip.fighters === this.game.fighters && this.game.fighters.length > 0; }
+  get canPlayPromo() { return !!this.promo && this.promo[0].fighters === this.game.fighters && this.game.fighters.length > 0; }
 
-  play({ record = true, onDone = null } = {}) {
-    if (this.playing || !this.canPlay) return false;
-    const g = this.game, c = this.clip;
+  // Play the knockout, or with `promo` the highlight reel.
+  play({ record = true, onDone = null, promo = false } = {}) {
+    if (this.playing || !(promo ? this.canPlayPromo : this.canPlay)) return false;
+    const g = this.game;
+    this.queue = promo ? [...this.promo] : [this.clip];
+    this.isPromo = promo;
     this.onDone = onDone;
     this.playing = true;
     this.skipped = false;
-    this.clock = c.from;
-    this.idx = 0; this.fxIdx = 0; this.evIdx = 0;
     this.projs = new Map();
     // put back afterwards: every fighter's live state, the camera and the live projectiles
     this.saved = {
@@ -173,22 +217,52 @@ export class Replay {
     };
     for (const p of g.projectiles) p.mesh.visible = false;
     g.rig.mode = 'replay';
+    this.caption = this.queue[0].caption;
+    const badge = document.getElementById('replay-badge');
+    if (badge) {
+      badge.querySelector('b').textContent = promo ? 'Highlights' : 'Replay';
+      badge.querySelector('span').textContent = promo ? `${g.fighters[this.queue[0].star]?.name || 'Your'} fight promo` : 'The final knockout';
+    }
+    this.nextClip();
+    document.body.classList.add('replaying');
+    if (record) this.startRecorder(promo ? 'promoVideo' : 'video');
+    return true;
+  }
+
+  // Cut to the next clip in the queue.
+  nextClip() {
+    const g = this.game, c = this.cur = this.queue.shift();
+    this.clock = c.from;
+    this.idx = 0; this.fxIdx = 0; this.evIdx = 0;
+    for (const proj of this.projs.values()) proj.dispose(g);
+    this.projs.clear();
+    this.spin = 0;
+    this.setBullet(0);
     // the camera sweeps in from the arena's open side toward the fighters
     const focus = this.koFocus();
     this.camYaw = Math.atan2(-focus.x, -focus.z);
     if (Math.hypot(focus.x, focus.z) < 2) this.camYaw = g.rig.yaw;
     this.camAt = null;
-    document.body.classList.add('replaying');
-    if (record) this.startRecorder();
-    return true;
+    if (this.queue.length || c.promo) {
+      const fl = document.getElementById('flash');
+      if (fl && c !== this.clip) { fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on'); }
+    }
+  }
+
+  setBullet(b) {
+    this.bullet = b;
+    const el = document.getElementById('bullet-grade');
+    if (el) el.style.opacity = b.toFixed(3);
+    document.body.classList.toggle('bullet-time', b > 0.35);
   }
 
   skip() { if (this.playing) { this.skipped = true; this.finish(false); } }
 
-  // Where the knockout happened (between the two fighters involved).
+  // Where the knockout happened (between the two fighters involved), or where the star is.
   koFocus() {
-    const c = this.clip;
+    const c = this.cur;
     const fr = this.frameAt(c.koT);
+    if (c.promo) return { x: fr.f[c.star * K], z: fr.f[c.star * K + 2] };
     const at = (slot) => (slot >= 0 && slot < c.fighters.length ? { x: fr.f[slot * K], z: fr.f[slot * K + 2] } : null);
     const v = at(c.victim), k = at(c.by);
     if (v && k && Math.hypot(v.x - k.x, v.z - k.z) < 12) return { x: (v.x + k.x) / 2, z: (v.z + k.z) / 2 };
@@ -196,7 +270,7 @@ export class Replay {
   }
 
   frameAt(t) {
-    const fr = this.clip.frames;
+    const fr = this.cur.frames;
     let i = 0;
     while (i < fr.length - 1 && fr[i + 1].t <= t) i++;
     return fr[i];
@@ -204,12 +278,25 @@ export class Replay {
 
   // One rendered frame of playback, in place of the simulation.
   step(dt) {
-    const g = this.game, c = this.clip;
-    // full speed, easing into slow motion for the knockout and back out after it
-    const speed = c.victim >= 0 ? lerp(1, SLOW, smooth(c.koT - 0.9, c.koT - 0.35, this.clock) * (1 - smooth(c.koT + 0.8, c.koT + 1.4, this.clock))) : 1;
+    const g = this.game, c = this.cur;
+    let speed = 1;
+    if (c.promo && c.bullet) {
+      // bullet time: the action all but stops around the moment while the camera sweeps round it
+      const b = smooth(c.peak - 0.42, c.peak - 0.1, this.clock) * (1 - smooth(c.peak + 0.14, c.peak + 0.42, this.clock));
+      speed = lerp(1, BULLET, b);
+      this.setBullet(b);
+    } else if (c.promo) {
+      speed = lerp(1, 0.5, smooth(c.peak - 0.4, c.peak - 0.1, this.clock) * (1 - smooth(c.peak + 0.3, c.peak + 0.7, this.clock)));
+    } else if (c.victim >= 0) {
+      // full speed, easing into slow motion for the knockout and back out after it
+      speed = lerp(1, SLOW, smooth(c.koT - 0.9, c.koT - 0.35, this.clock) * (1 - smooth(c.koT + 0.8, c.koT + 1.4, this.clock)));
+    }
     const sdt = dt * speed;
     this.clock += sdt;
-    if (this.clock >= c.to) { this.finish(false); return; }
+    if (this.clock >= c.to) {
+      if (this.queue.length) this.nextClip(); else this.finish(false);
+      return;
+    }
     const fr = c.frames;
     while (this.idx < fr.length - 2 && fr[this.idx + 1].t <= this.clock) this.idx++;
     const a = fr[this.idx], b = fr[this.idx + 1] || a;
@@ -299,7 +386,8 @@ export class Replay {
 
   // Wide at first, pushing in on the knockout while slowly circling it.
   camera(dt) {
-    const g = this.game, c = this.clip, rig = g.rig;
+    const g = this.game, c = this.cur, rig = g.rig;
+    if (c.promo) { this.promoCamera(dt); return; }
     const at = this.frameAt(this.clock);
     const pos = (slot) => ({ x: at.f[slot * K], z: at.f[slot * K + 2] });
     let fx = 0, fz = 0;
@@ -327,6 +415,25 @@ export class Replay {
     rig.place(dt);
   }
 
+  // The reel holds on the star: close and low, and in bullet time it swings round them while they hang in the air.
+  promoCamera(dt) {
+    const g = this.game, c = this.cur, rig = g.rig, b = this.bullet;
+    const at = this.frameAt(this.clock), o = c.star * K;
+    const x = at.f[o], y = Math.max(0, at.f[o + 1]), z = at.f[o + 2];
+    const k = this.camAt === null ? 1 : 1 - Math.exp(-dt * (4 + b * 6));
+    this.camAt = true;
+    rig.focus.x += (x - rig.focus.x) * k;
+    rig.focus.z += (z - rig.focus.z) * k;
+    rig.focus.y += (1.05 + y * 0.85 - rig.focus.y) * k;
+    rig.distance += (lerp(7, 3.9, b) - rig.distance) * k;
+    rig.pitch += (lerp(0.36, 0.06, b) - rig.pitch) * k;
+    // real time, not replay time, so the sweep runs while the action is frozen
+    this.spin += dt * BULLET_SPIN * b;
+    rig.yaw = this.camYaw + (this.clock - c.from) * 0.1 - 0.3 + this.spin;
+    rig.updateBasis();
+    rig.place(dt);
+  }
+
   finish(aborted) {
     if (!this.playing) return;
     const g = this.game, s = this.saved;
@@ -334,7 +441,7 @@ export class Replay {
     for (const proj of this.projs.values()) proj.dispose(g);
     this.projs.clear();
     for (const p of g.projectiles) p.mesh.visible = true;
-    if (s && this.clip?.fighters === g.fighters) {
+    if (s && this.cur?.fighters === g.fighters) {
       g.fighters.forEach((f, i) => {
         const v = s.fighters[i];
         f.pos.copy(v.pos);
@@ -351,6 +458,8 @@ export class Replay {
       g.rig.focus.copy(s.rig.focus);
     }
     this.saved = null;
+    this.queue = [];
+    this.setBullet(0);
     // an online client skipped the host's stream while it watched; don't burst through it all at once
     if (g.online === 'client' && g.net?.fxQueue) g.net.fxQueue.length = 0;
     document.body.classList.remove('replaying');
@@ -361,7 +470,9 @@ export class Replay {
   }
 
   // ------------------------------------------------------------ the video file
-  startRecorder() {
+  startRecorder(slot = 'video') {
+    // the knockout's video may still be on its closing card when the promo starts: finish it first
+    if (this.rec) { const prev = this.rec; this.rec = null; try { prev.stop(); } catch { /* already stopped */ } }
     const src = this.game.renderer.domElement;
     if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream || !src.width) return;
     const scale = Math.min(1, CLIP_EDGE / Math.max(src.width, src.height));
@@ -382,15 +493,17 @@ export class Replay {
     rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
     rec.onstop = () => {
       for (const tr of stream.getVideoTracks()) tr.stop();
-      try { this.audioStream && this.releaseStream?.(); } catch { /* ignore */ }
+      // the sound tap is shared, so leave it while another recording is running
+      try { if (!this.rec) this.audioStream && this.releaseStream?.(); } catch { /* ignore */ }
       const seconds = (performance.now() - started) / 1000;
       // a skipped replay still counts when there is no clip yet and it caught enough to show something
-      if (!chunks.length || rec.discard || (rec.partial && (this.video || seconds < 2))) return;
+      if (!chunks.length || rec.discard || (rec.partial && (this[slot] || seconds < 2))) return;
       const type = (rec.mimeType || mimeType || 'video/webm').split(';')[0];
-      if (this.video) URL.revokeObjectURL(this.video.url);
+      if (this[slot]) URL.revokeObjectURL(this[slot].url);
       const blob = new Blob(chunks, { type });
-      this.video = { blob, type, url: URL.createObjectURL(blob), seconds, name: `jose-madrid-battle-arena-ko.${type.includes('mp4') ? 'mp4' : 'webm'}` };
-      this.onVideo?.(this.video);
+      const base = slot === 'promoVideo' ? 'jose-madrid-battle-arena-highlights' : 'jose-madrid-battle-arena-ko';
+      this[slot] = { blob, type, url: URL.createObjectURL(blob), seconds, name: `${base}.${type.includes('mp4') ? 'mp4' : 'webm'}` };
+      this.onVideo?.(this[slot]);
     };
     try { rec.start(1000); } catch { return; }
     this.rec = rec;
@@ -419,6 +532,16 @@ export class Replay {
     const ctx = this.ctx2d, cv = this.canvas, src = this.game.renderer.domElement;
     const w = cv.width, h = cv.height, u = Math.max(w, h) / 1280;
     ctx.drawImage(src, 0, 0, w, h);
+    const b = this.bullet;
+    if (b > 0.01) {
+      // the bullet-time grade: a green cast, dark edges and faint scan lines, as on screen
+      ctx.fillStyle = `rgba(20, 90, 40, ${0.22 * b})`;
+      ctx.fillRect(0, 0, w, h);
+      const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.65);
+      v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,10,4,${0.7 * b})`);
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, w, h);
+    }
     // cinematic bars, the replay badge, and the game's name
     const bar = Math.round(h * 0.07);
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
@@ -429,14 +552,20 @@ export class Replay {
     ctx.font = `700 ${Math.round(24 * u)}px 'Barlow Condensed', 'Arial Narrow', sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText('● REPLAY', Math.round(28 * u), Math.round(bar + 33 * u));
+    ctx.fillText(this.isPromo ? '● HIGHLIGHTS' : '● REPLAY', Math.round(28 * u), Math.round(bar + 33 * u));
+    if (b > 0.35) {
+      ctx.fillStyle = `rgba(140, 255, 170, ${Math.min(1, (b - 0.35) * 3)})`;
+      ctx.textAlign = 'right';
+      ctx.fillText('BULLET TIME', Math.round(w - 18 * u), Math.round(bar + 33 * u));
+      ctx.textAlign = 'left';
+    }
     ctx.font = `600 ${Math.round(Math.min(bar * 0.5, 26 * u))}px 'Barlow Condensed', 'Arial Narrow', sans-serif`;
     ctx.fillStyle = '#ffc861';
     ctx.fillText('JOSÉ MADRID SALSA BATTLE ARENA', Math.round(18 * u), Math.round(h - bar / 2));
-    if (this.clip?.caption) {
+    if (this.caption) {
       ctx.textAlign = 'right';
       ctx.fillStyle = '#efe4d2';
-      ctx.fillText(this.clip.caption, Math.round(w - 18 * u), Math.round(h - bar / 2));
+      ctx.fillText(this.caption, Math.round(w - 18 * u), Math.round(h - bar / 2));
     }
   }
 
@@ -455,7 +584,7 @@ export class Replay {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#efe4d2';
     ctx.font = `700 ${Math.round(40 * u)}px 'Barlow Condensed', 'Arial Narrow', sans-serif`;
-    if (this.clip?.caption) ctx.fillText(this.clip.caption, w / 2, h * 0.08 + size + 44 * u);
+    if (this.caption) ctx.fillText(this.caption, w / 2, h * 0.08 + size + 44 * u);
     ctx.fillStyle = '#ffc861';
     ctx.font = `600 ${Math.round(28 * u)}px 'Barlow Condensed', 'Arial Narrow', sans-serif`;
     ctx.fillText('Think you can do better? Play free in your browser', w / 2, h * 0.08 + size + 92 * u);
@@ -465,6 +594,6 @@ export class Replay {
   }
 
   stats() {
-    return { frames: this.frames.length, fx: this.fx.length, ev: this.ev.length, clip: this.clip ? { frames: this.clip.frames.length, seconds: +(this.clip.to - this.clip.from).toFixed(2), koAt: +(this.clip.koT - this.clip.from).toFixed(2), victim: this.clip.victim, by: this.clip.by } : null, playing: this.playing, recording: !!this.rec, video: this.video ? { type: this.video.type, kb: Math.round(this.video.blob.size / 1024), seconds: +this.video.seconds.toFixed(1) } : null };
+    return { frames: this.frames.length, fx: this.fx.length, ev: this.ev.length, clip: this.clip ? { frames: this.clip.frames.length, seconds: +(this.clip.to - this.clip.from).toFixed(2), koAt: +(this.clip.koT - this.clip.from).toFixed(2), victim: this.clip.victim, by: this.clip.by } : null, playing: this.playing, promo: this.promo ? this.promo.map((c) => ({ kind: c.kind, seconds: +(c.to - c.from).toFixed(2), bullet: c.bullet })) : null, bullet: +this.bullet.toFixed(2), clock: this.playing ? +this.clock.toFixed(2) : null, recording: !!this.rec, video: this.video ? { type: this.video.type, kb: Math.round(this.video.blob.size / 1024), seconds: +this.video.seconds.toFixed(1) } : null, promoVideo: this.promoVideo ? { kb: Math.round(this.promoVideo.blob.size / 1024), seconds: +this.promoVideo.seconds.toFixed(1) } : null, highlights: this.highlights.stats() };
   }
 }

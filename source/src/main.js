@@ -71,7 +71,6 @@ function boot() {
     onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } if (arcade.active) { arcade.restartStage(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
     onQuit: () => { training.stop(); arcade.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => game.setQuality(q),
-    onFocusCamChange: (on) => game.focus.setEnabled(on),
     onVolumeChange: (v) => audio.setVolumes(v),
     onTouchChange: (s) => applyTouch(s),
     pads,
@@ -117,7 +116,6 @@ function boot() {
   devices.touch = touch;
   const applyTouch = (s) => { touch.setSize(s.touchSize || 1); touch.vibrate = pads.rumbleOn; };
   applyTouch(menus.setup);
-  game.focus.setEnabled(params.get('focus') !== '0' && menus.setup.focusCam !== false);
   const toastEl = document.createElement('div');
   toastEl.id = 'pad-toast';
   document.body.appendChild(toastEl);
@@ -272,12 +270,16 @@ function boot() {
     // freeze the deciding knockout now, then play it back (recording the clip) before the results
     const teamed = champ.team >= 0 && champ.teamColor != null;
     game.replay.capture(teamed ? `${champ.teamName} win the arena` : `${champ.name}${champ.label !== 'CPU' ? ` (${champ.label})` : ''} wins`);
+    // and cut the player's own best moments into the fight promo, which plays straight after
+    const star = game.replay.highlights.star();
+    game.replay.capturePromo(star ? `${star.name}${star.label !== 'CPU' ? ` (${star.label})` : ''}: fight highlights` : '');
     const results = () => { if (game.phase === 'matchOver') { menus.showResults(champ, fighters); progressUi.renderResult(menus.progress); } };
+    const promo = () => { if (game.phase !== 'matchOver' || !game.replay.play({ promo: true, onDone: results })) results(); };
     setTimeout(() => {
       if (game.phase !== 'matchOver') return;
       game.keyboard.captureGameKeys = false;
       game.hud.show(false);
-      if (!game.replay.play({ onDone: results })) results();
+      if (!game.replay.play({ onDone: promo })) promo();
     }, 2600);
   };
   // the results screen's replay buttons
@@ -287,6 +289,13 @@ function boot() {
   menus.replay = {
     get canPlay() { return game.replay.canPlay; },
     get video() { return game.replay.video; },
+    get canPlayPromo() { return game.replay.canPlayPromo; },
+    get promoVideo() { return game.replay.promoVideo; },
+    watchPromo() {
+      const back = () => { menus.show('results'); menus.updateReplayButtons(); };
+      menus.hideAll();
+      if (!game.replay.play({ promo: true, onDone: back })) back();
+    },
     watch() {
       const back = () => { menus.show('results'); menus.updateReplayButtons(); };
       menus.hideAll();

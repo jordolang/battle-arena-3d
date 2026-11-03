@@ -143,13 +143,8 @@ function attach(model, id) {
     toHipsParent: relMatrix(hipsBone.parent, holder, new THREE.Matrix4()).invert(),
     hipsRestBody: new THREE.Vector3(0, model.hipsBaseY, 0),
   };
-  // the weapon grip sits in the model's right hand rather than the longer procedural forearm
-  const fore = rig.getObjectByName('RightForeArm'), hand = rig.getObjectByName('RightHand');
-  if (fore && hand && model.grip) {
-    pa.setFromMatrixPosition(relMatrix(fore, holder, _m));
-    pb.setFromMatrixPosition(relMatrix(hand, holder, _m));
-    model.grip.position.y = -pa.distanceTo(pb) * k - 0.04;
-  }
+  // the weapon grip follows the model's right hand (see syncRealModel), not the procedural fist
+  model.real.hand = rig.getObjectByName('RightHand');
   syncRealModel(model);
 }
 
@@ -182,6 +177,15 @@ export function syncRealModel(model) {
   const h = model.joints.hips.position;
   _v.set(h.x - R.hipsRestBody.x, h.y - R.hipsRestBody.y, h.z - R.hipsRestBody.z).divideScalar(R.k);
   R.hipsBone.position.copy(_v.add(R.hipsRestHolder).applyMatrix4(R.toHipsParent));
+  // The model's arm is proportioned differently from the procedural one, so put the grip (a child
+  // of the procedural forearm) wherever the model's hand actually is this frame. The forearms point
+  // the same way, so the grip keeps its orientation.
+  if (R.hand && model.grip) {
+    _v.setFromMatrixPosition(relMatrix(R.hand, model.body, _m));
+    relMatrix(model.grip.parent, model.body, _m).invert();
+    model.grip.position.copy(_v.applyMatrix4(_m));
+    model.grip.position.y -= 0.04; // into the palm
+  }
 }
 
 // Forgets a model whose fighter has been removed, so a late file doesn't attach to it.

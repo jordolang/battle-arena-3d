@@ -12,6 +12,7 @@ import { OnlineMenus } from './net/online-ui.js';
 import { TournamentMenus } from './net/tourney-ui.js';
 import { ChatPanel } from './net/chat.js';
 import { CharacterSelect } from './charSelect.js';
+import { preloadRealModels } from './realModels.js';
 import { wardrobe } from './cosmetics.js';
 import { Account } from './account.js';
 import { Progression, trackMatchCounts } from './progression.js';
@@ -26,6 +27,7 @@ import { Friends } from './friends.js';
 import { FriendsMenus } from './friends-ui.js';
 
 function boot() {
+  preloadRealModels(); // rigged fighter bodies stream in while the menus load
   const keyboard = new Keyboard();
   const bindings = loadBindings();
   keyboard.bindings = bindings;

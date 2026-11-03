@@ -16,7 +16,19 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
 - **From source:** serve this folder with any static server (for example `python3 -m http.server`) and open `index.html`.
   ES modules need a server, so double-clicking `index.html` will not work.
 - Rebuild the single-file versions after changing the source: `npm i --no-save esbuild && node tools/build.mjs`,
-  then copy `dist/battle-arena.html` to the repo root as `index.html`.
+  then copy `dist/battle-arena.html` to the repo root as `index.html` and `dist/models/` to the repo root as `models/`.
+
+## Fighter models
+- Fighters listed in `REAL_MODEL_IDS` (`src/realModels.js`, Titan so far) have a rigged, textured body in
+  `models/<id>.glb`, made from reference art with Higgsfield image-to-3D (auto-rigged, PBR textures). The game loads
+  them from `models/` next to the page (or `window.ARENA_MODEL_BASE`) while the menus open.
+- The procedural skeleton still drives every pose, mocap clip and combo; the model's bones copy the joints' rotations
+  each frame, so moves, hitboxes and online sync are unchanged. Where a file can't load (the offline single file, an
+  Artifact) the fighter keeps the procedural body.
+- Outfits and headgear from the locker room are hidden on a real body for now; team pads and goal rewards still show.
+- To add a fighter: make an A-pose reference, convert it (image_to_3d, rigging on, PBR on, a-pose, ~30k polys),
+  shrink it with `npx @gltf-transform/cli optimize in.glb models/<id>.glb --texture-size 1024 --texture-compress webp
+  --compress meshopt`, then add its id to `REAL_MODEL_IDS`.
 
 ## José Madrid Salsa accounts, profiles and leaderboards
 - **Everyone signs in.** The title screen asks players to sign in with their José Madrid Salsa account before they can
@@ -352,6 +364,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - `progression.js` XP, fighter levels, challenges and the season pass · `progression-ui.js` the Season pass screen and
   the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
+- `realModels.js` loads the rigged GLB fighter bodies and copies the procedural pose onto their bones
 - `effects.js` pooled particles and FX
 - `camera.js` framing camera and the focus shot · `focus.js` when the focus camera kicks in, and the combo counter · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS

@@ -456,6 +456,7 @@ export class Fighter {
     this.move = move;
     this.moveName = name;
     this.perfect = perfect;
+    this.landed = false; // set when a blow of this move connects (hit or block), not just when it was tried
     this.sprinting = false;
     this.setState('attack');
     this.spendStamina(move.stamina || 0, world);
@@ -509,7 +510,7 @@ export class Fighter {
     const b = this.buffer?.action;
     if (b && (b === 'punch' || b === 'kick') && t > m.startup + m.active * 0.5 && m.chain[b]) {
       const pressedAt = t - (world.time - this.buffer.time);
-      const perfect = this.hitSet.size > 0 && pressedAt >= activeEnd - COMBO.perfectEarly && pressedAt <= activeEnd + COMBO.perfectLate;
+      const perfect = this.landed && pressedAt >= activeEnd - COMBO.perfectEarly && pressedAt <= activeEnd + COMBO.perfectLate;
       this.consumeBuffer();
       this.startAttack(m.chain[b], world, perfect);
       if (perfect) {
@@ -527,7 +528,7 @@ export class Fighter {
   // a jump after a launcher connects (to chase the fighter up), and plain movement near the end.
   cancelRecovery(action, intoRecovery, world) {
     const m = this.move;
-    const landed = this.hitSet.size > 0;
+    const landed = this.landed;
     if (action === 'dash') { this.consumeBuffer(); if (this.startDodge(world)) return true; }
     if (landed && this.grounded) {
       if (action === 'skill1' || action === 'skill2' || action === 'skill3') {
@@ -572,12 +573,12 @@ export class Fighter {
         damage: m.damage * power * W.damage, knock: m.knock * W.knock, hitstun: m.hitstun * 1.15,
         knockdown: !!m.knockdown || (!!W.heavy && !!m.heavy), heavy: !!m.heavy || !!W.heavy, dx: nx, dz: nz,
         kind: 'weapon', weapon: this.weapon, melee: true, move: this.moveName, color: W.color,
-        poison: W.bleed, poisonColor: W.bleed ? 0xff2a2a : undefined,
+        poison: W.bleed, poisonColor: W.bleed ? 0xff2a2a : undefined, launch: m.launch, perfect: this.perfect,
       } : {
         damage: m.damage * power, knock: m.knock, hitstun: m.hitstun, knockdown: !!m.knockdown,
         heavy: !!m.heavy, dx: nx, dz: nz, kind: m.kind, move: this.moveName, launch: m.launch, perfect: this.perfect,
       }, world);
-      if (res !== 'ignored') this.hitstop = Math.max(this.hitstop, m.heavy || W ? 0.09 : 0.05);
+      if (res !== 'ignored') { this.landed = true; this.hitstop = Math.max(this.hitstop, m.heavy || W ? 0.09 : 0.05); }
       if (W && res !== 'ignored' && --this.weaponHits <= 0) {
         world.effects.sparks(this.pos.x, 1.2, this.pos.z, W.color, 26, 6);
         world.events.emit('weaponBreak', { fighter: this, weapon: this.weapon });

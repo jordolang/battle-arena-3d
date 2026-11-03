@@ -333,14 +333,17 @@ export class Fighter {
       const tick = Math.min(this.poison, dt);
       this.poison -= tick;
       this.applyDamage(tick * 2.4, this.poisonBy, world, true);
-      if (Math.random() < dt * 12) world.effects.sparks(this.pos.x, 1.2, this.pos.z, this.poisonColor, 2, 1.5);
+      if (this.poisonColor === 0xff7a1c) {
+        // burning: flames lick up the body
+        if (Math.random() < dt * 26) world.effects.fire(this.pos.x, 0.5 + Math.random() * 1.2 * this.def.scale, this.pos.z, 0.45, 1, 0.5);
+      } else if (Math.random() < dt * 12) world.effects.sparks(this.pos.x, 1.2, this.pos.z, this.poisonColor, 2, 1.5);
     }
     // fire ring (sudden death)
     if (world.ringRadius < 90) {
       const d = Math.hypot(this.pos.x, this.pos.z);
       if (d > world.ringRadius) {
         this.applyDamage(dt * 9, null, world, true);
-        if (Math.random() < dt * 20) world.effects.sparks(this.pos.x, 0.6, this.pos.z, 0xff7a2a, 3, 3);
+        if (Math.random() < dt * 30) world.effects.fire(this.pos.x, 0.3 + Math.random() * 0.8, this.pos.z, 0.6, 1, 0.6);
       }
     }
   }

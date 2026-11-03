@@ -73,11 +73,7 @@ export class Projectile {
       const k = (this.size ?? 1) * (1 + Math.sin(world.time * 40) * 0.08);
       this.mesh.scale.set(k, k, k * (this.stretch ?? 1));
       if (this.fiery) {
-        // a rolling ball of flame shedding fire and smoke behind it
-        const s = this.size ?? 1;
-        const n = Math.min(4, Math.round(dt * 160 * (0.5 + s * 0.5)) || 1);
-        for (let i = 0; i < n; i++) world.effects.fire(this.pos.x - this.dir.x * 0.15, this.pos.y, this.pos.z - this.dir.z * 0.15, 0.7 * s + 0.15, 1, 0.35 * s);
-        if (Math.random() < dt * 14) world.effects.smoke(this.pos.x - this.dir.x * 0.5, this.pos.y + 0.1, this.pos.z - this.dir.z * 0.5, 0.35 + s * 0.35);
+        world.effects.fireTrail(this.pos, this.dir, this.size ?? 1, dt);
       } else if (Math.random() < dt * 60) world.effects.trail(this.pos.x, this.pos.y, this.pos.z, this.color);
     }
   }

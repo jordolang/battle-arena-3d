@@ -122,7 +122,10 @@ export class Effects {
     this.pLife[i] = life; this.pMax[i] = life; this.pBase[i] = size; this.pGrav[i] = grav; this.pDrag[i] = drag;
   }
 
-  sparks(x, y, z, color, count = 12, speed = 5) {
+  sparks(x, y, z, color, count = 12, speed = 5) { this.sparkBurst(x, y, z, color, count, speed); }
+
+  // (the body of sparks(), callable from other effects without being sent or recorded twice)
+  sparkBurst(x, y, z, color, count, speed) {
     for (let k = 0; k < count; k++) {
       const a = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1;
       const r = Math.sqrt(1 - u * u), s = speed * (0.4 + Math.random() * 0.8);
@@ -160,12 +163,21 @@ export class Effects {
     }
   }
 
-  smoke(x, y, z, size = 0.8) { this.real.smokePuff(x, y, z, size); }
+  // A rolling ball of flame shedding fire and smoke behind it. Every copy of the game draws its own
+  // projectile trails, so (unlike fire()) this is not sent to online clients or recorded for replays.
+  fireTrail(pos, dir, s, dt) {
+    const n = Math.min(4, Math.round(dt * 160 * (0.5 + s * 0.5)) || 1);
+    for (let i = 0; i < n; i++) {
+      this.real.flame(pos.x - dir.x * 0.15 + (Math.random() - 0.5) * 0.35 * s, pos.y + (Math.random() - 0.5) * 0.35 * s, pos.z - dir.z * 0.15 + (Math.random() - 0.5) * 0.35 * s,
+        (0.7 * s + 0.15) * (0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6, 1 + Math.random() * 1.2, (Math.random() - 0.5) * 0.6, 0.35 + Math.random() * 0.25);
+    }
+    if (Math.random() < dt * 14) this.real.smokePuff(pos.x - dir.x * 0.5, pos.y + 0.1, pos.z - dir.z * 0.5, 0.35 + s * 0.35);
+  }
 
   // A fireball going off, with chips and dust too when it hits the ground.
   explode(x, y, z, scale = 1, grounded = false) {
     this.real.explode(x, y, z, scale, grounded);
-    this.sparks(x, y, z, 0xffb35a, Math.round(16 * scale), 7 * scale);
+    this.sparkBurst(x, y, z, 0xffb35a, Math.round(16 * scale), 7 * scale);
   }
 
   // Flames along a line at chest height (a flame ray).

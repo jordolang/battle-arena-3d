@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { buildGear, buildArmor } from './items.js';
 import { swayCape } from './wardrobeModels.js';
 import { MOCAP, MOCAP_FPS } from './mocapData.js';
+import { syncRealModel } from './realModels.js';
 
 const geoCache = new Map();
 function geo(key, make) {
@@ -258,7 +259,7 @@ export function setGear(model, held, holstered) {
         model.gear[key] = g;
       }
       model.gear[key].visible = true;
-      model.joints.elR.userData.fist.visible = true;
+      if (!model.real) model.joints.elR.userData.fist.visible = true;
     }
     model.held = held;
   }
@@ -298,6 +299,7 @@ export function animateLife(model, f, dt, lookAt) {
   const swing = Math.min(1.2, speed * 0.12) + Math.sin(f.animTime * 9) * Math.min(0.15, speed * 0.02);
   model.tails.rotation.x += (swing - model.tails.rotation.x) * Math.min(1, dt * 8);
   swayCape(model, speed, f.animTime, dt);
+  syncRealModel(model);
 }
 function wrap(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
 
@@ -719,4 +721,5 @@ export function applyPose(model, target, dt, sharp) {
   const cur = model.current;
   cur.lift = (cur.lift ?? 0) + (target.lift - (cur.lift ?? 0)) * k;
   model.joints.hips.position.y = model.hipsBaseY + cur.lift;
+  syncRealModel(model);
 }

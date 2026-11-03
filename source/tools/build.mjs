@@ -3,7 +3,7 @@
 //   artifact.html       the same page without the html/head/body shell, for publishing as an Artifact
 // Usage (from this folder):  npm i --no-save esbuild three@0.180.0 && node tools/build.mjs
 import { build, transform } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,4 +34,9 @@ mkdirSync(join(root, 'dist'), { recursive: true });
 writeFileSync(join(root, 'dist/battle-arena.html'),
   `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<link rel="icon" href="data:,">\n${og}\n${head}\n</head>\n<body>\n${body}\n${script}\n</body>\n</html>\n`);
 writeFileSync(join(root, 'dist/artifact.html'), `${head}\n${body}\n${script}\n`);
-console.log(`built: ${(js.length / 1024).toFixed(0)} KB of script`);
+// rigged fighter bodies load at run time from models/ next to the page (the single file falls back
+// to the procedural bodies where they can't be fetched)
+mkdirSync(join(root, 'dist/models'), { recursive: true });
+const models = readdirSync(join(root, 'models')).filter((f) => f.endsWith('.glb'));
+for (const f of models) copyFileSync(join(root, 'models', f), join(root, 'dist/models', f));
+console.log(`built: ${(js.length / 1024).toFixed(0)} KB of script, ${models.length} fighter model(s) in dist/models`);

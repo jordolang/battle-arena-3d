@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { ROSTER, SPECIALS, SKILLS } from './config.js';
 import { buildFighterModel, computePose, applyPose, animateLife } from './fighterModel.js';
 import { dressFighter } from './wardrobeModels.js';
+import { useRealModel, releaseRealModel } from './realModels.js';
 import { isHandheld } from './perf.js';
 import { wardrobe, bodyDef, BODY, BODY_KEYS, ITEMS, SLOTS, SLOT_LABELS, RARITY, DEFAULT_LOOK, ITEM_COUNT, outfitColors, sanitizeLook } from './cosmetics.js';
 
@@ -408,6 +409,7 @@ export class CharacterSelect {
     this.disposeModel();
     const def = ROSTER[index];
     const model = dressFighter(buildFighterModel(bodyDef(def, look)), def, look);
+    useRealModel(model, def.id);
     model.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     model.ring.visible = false;
     this.model = model;
@@ -427,6 +429,7 @@ export class CharacterSelect {
   disposeModel() {
     if (!this.model) return;
     this.holder.remove(this.model.root);
+    releaseRealModel(this.model);
     for (const m of this.model.mats) m.dispose();
     for (const m of [this.model.eyeMat, this.model.ring.material, this.model.ice.material, this.model.aura.material, this.model.shell.material]) m.dispose();
     this.model = null;
@@ -527,6 +530,7 @@ export class CharacterSelect {
     const def = ROSTER[i];
     const r = this.renderer;
     const model = dressFighter(buildFighterModel(bodyDef(def, look)), def, sanitizeLook(look));
+    useRealModel(model, def.id);
     model.ring.visible = false;
     // the guard pose, so fists are up in the shot
     const f = { state: 'idle', animTime: 0.4, runPhase: 0, moveAmount: 0, grounded: true, alive: true, def, model };
@@ -550,6 +554,7 @@ export class CharacterSelect {
     // put everything back
     this.holder.rotation.y = hold;
     this.holder.remove(model.root);
+    releaseRealModel(model);
     for (const m of [...model.mats, model.eyeMat, model.ring.material, model.ice.material, model.aura.material, model.shell.material]) m.dispose();
     if (this.model) this.model.root.visible = keepModel ?? true;
     r.setPixelRatio(prevPr);

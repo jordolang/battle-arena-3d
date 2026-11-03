@@ -10,6 +10,7 @@ import { StormPeak } from './stormpeak.js';
 import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
+import { releaseRealModel } from './realModels.js';
 import { CameraRig } from './camera.js';
 import { FocusDirector } from './focus.js';
 import { AIController, DummyController } from './ai.js';
@@ -222,6 +223,7 @@ export class Game {
     this.replay.reset();
     for (const f of this.fighters) {
       this.scene.remove(f.model.root);
+      releaseRealModel(f.model);
       for (const m of f.model.mats) m.dispose();
       f.model.eyeMat.dispose();
       f.model.ring.material.dispose();

@@ -365,7 +365,8 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `realModels.js` loads the rigged GLB fighter bodies and copies the procedural pose onto their bones
-- `effects.js` pooled particles and FX
+- `effects.js` pooled particles and FX · `realFx.js` real fire and smoke (animated flame and smoke sprites painted from
+  noise at load), dust clouds and tumbling rock debris
 - `camera.js` framing camera and the focus shot · `focus.js` when the focus camera kicks in, and the combo counter · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·

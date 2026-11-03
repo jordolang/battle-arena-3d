@@ -1,6 +1,7 @@
 // Pooled visual effects: sparks, rings, glows, lightning. Everything is
 // allocated once up front so combat never triggers garbage-collection spikes.
 import * as THREE from 'three';
+import { RealFx } from './realFx.js';
 
 function softDotTexture() {
   const c = document.createElement('canvas');
@@ -107,6 +108,8 @@ export class Effects {
       this.cones.push({ mesh: m, t: 1, dur: 0.45, len: 1 });
     }
     this.tmpColor = new THREE.Color();
+    // real fire, smoke, dust clouds and rock chips (realFx.js)
+    this.real = new RealFx(scene);
   }
 
   emit(x, y, z, vx, vy, vz, color, size, life, grav = 9, drag = 2.5) {
@@ -142,10 +145,38 @@ export class Effects {
       (Math.random() - 0.5), Math.random() * 1.5, (Math.random() - 0.5), color, 0.35, 0.3, -2, 3);
   }
 
+  // Ground disturbed at (x, z): footsteps and dodges kick up a little dust; landings, slams and
+  // wall hits (scale 1 and up) also throw out rock chips.
   dust(x, z, scale = 1) {
-    for (let k = 0; k < 14 * scale; k++) {
-      const a = Math.random() * Math.PI * 2, s = (1.5 + Math.random() * 2.5) * Math.sqrt(scale);
-      this.emit(x, 0.15, z, Math.cos(a) * s, 0.4 + Math.random(), Math.sin(a) * s, 0x5a4a3c, 0.5 + Math.random() * 0.4, 0.7, -0.5, 3);
+    if (scale < 0.9) this.real.dustCloud(x, z, scale * 0.6);
+    else this.real.groundBlast(x, z, scale);
+  }
+
+  // Burning: a few flames licking up from a point (a fireball, a burning fighter).
+  fire(x, y, z, size = 0.5, count = 1, spread = 0.2) {
+    for (let k = 0; k < count; k++) {
+      this.real.flame(x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spread, z + (Math.random() - 0.5) * spread,
+        size * (0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6, 1 + Math.random() * 1.2, (Math.random() - 0.5) * 0.6, 0.35 + Math.random() * 0.25);
+    }
+  }
+
+  smoke(x, y, z, size = 0.8) { this.real.smokePuff(x, y, z, size); }
+
+  // A fireball going off, with chips and dust too when it hits the ground.
+  explode(x, y, z, scale = 1, grounded = false) {
+    this.real.explode(x, y, z, scale, grounded);
+    this.sparks(x, y, z, 0xffb35a, Math.round(16 * scale), 7 * scale);
+  }
+
+  // Flames along a line at chest height (a flame ray).
+  fireLine(sx, sz, ex, ez, y = 1.2) {
+    const n = Math.round(Math.hypot(ex - sx, ez - sz) * 6);
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      const j = (Math.random() - 0.5) * 0.35;
+      this.real.flame(sx + (ex - sx) * t + j, y + (Math.random() - 0.5) * 0.5, sz + (ez - sz) * t - j, 0.35 + Math.random() * 0.35 + t * 0.25,
+        (ex - sx) / n * 3, 0.8 + Math.random(), (ez - sz) / n * 3, 0.3 + t * 0.35);
+      if (k % 4 === 0) this.real.smokePuff(sx + (ex - sx) * t, y + 0.4, sz + (ez - sz) * t, 0.5, 0, 1.2, 0, 1.2, 0x241e1a, 0.35);
     }
   }
 
@@ -223,6 +254,7 @@ export class Effects {
   }
 
   update(dt) {
+    this.real.update(dt);
     // particles
     for (let i = 0; i < MAX_PARTICLES; i++) {
       if (this.pLife[i] <= 0) continue;

@@ -20,6 +20,8 @@ export class Projectile {
     this.hit = opts.hit;
     this.dead = false;
     this.color = opts.color;
+    // fireballs and burning bolts are drawn as real flame with a smoke trail (online and replay copies too)
+    this.fiery = opts.fiery ?? (this.kind === 'fireball' || !!SKILLS[this.kind]?.burn);
     if (this.kind === 'spear') {
       this.mesh = new THREE.Mesh(tipGeo, new THREE.MeshStandardMaterial({ color: 0xc9ccd2, metalness: 0.9, roughness: 0.3 }));
       const chainGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
@@ -29,6 +31,7 @@ export class Projectile {
       this.mesh = new THREE.Mesh(projGeo, new THREE.MeshBasicMaterial({ color: opts.color }));
       this.glow = world.effects.makeGlow(opts.glow ?? opts.color, 1.6);
       this.mesh.add(this.glow);
+      if (this.fiery) this.mesh.material.visible = false; // the flames are the projectile; only the glow stays
       this.size = opts.size ?? 1;
       this.stretch = opts.stretch ?? 1;  // bullets are drawn as long tracers
       this.mesh.scale.set(this.size, this.size, this.size * this.stretch);
@@ -69,12 +72,19 @@ export class Projectile {
     } else {
       const k = (this.size ?? 1) * (1 + Math.sin(world.time * 40) * 0.08);
       this.mesh.scale.set(k, k, k * (this.stretch ?? 1));
-      if (Math.random() < dt * 60) world.effects.trail(this.pos.x, this.pos.y, this.pos.z, this.color);
+      if (this.fiery) {
+        // a rolling ball of flame shedding fire and smoke behind it
+        const s = this.size ?? 1;
+        const n = Math.min(4, Math.round(dt * 160 * (0.5 + s * 0.5)) || 1);
+        for (let i = 0; i < n; i++) world.effects.fire(this.pos.x - this.dir.x * 0.15, this.pos.y, this.pos.z - this.dir.z * 0.15, 0.7 * s + 0.15, 1, 0.35 * s);
+        if (Math.random() < dt * 14) world.effects.smoke(this.pos.x - this.dir.x * 0.5, this.pos.y + 0.1, this.pos.z - this.dir.z * 0.5, 0.35 + s * 0.35);
+      } else if (Math.random() < dt * 60) world.effects.trail(this.pos.x, this.pos.y, this.pos.z, this.color);
     }
   }
 
   burst(world) {
-    if (this.kind !== 'spear') world.effects.sparks(this.pos.x, this.pos.y, this.pos.z, this.color, 24, 6);
+    if (this.fiery) world.effects.explode(this.pos.x, this.pos.y, this.pos.z, 0.55 + 0.45 * (this.size ?? 1));
+    else if (this.kind !== 'spear') world.effects.sparks(this.pos.x, this.pos.y, this.pos.z, this.color, 24, 6);
     this.dispose(world);
   }
 
@@ -309,9 +319,14 @@ export function executeSkill(f, id, world) {
       }
       const sx = f.pos.x + fw.x * 0.6, sz = f.pos.z + fw.z * 0.6;
       const ex = f.pos.x + fw.x * len, ez = f.pos.z + fw.z * len;
-      world.effects.streak(sx, sz, ex, ez, sk.color);
-      world.effects.streak(sx, sz, ex, ez, sk.color);
-      world.effects.sparks(ex, 1.2, ez, sk.color, 18, 5);
+      if (sk.burn) {
+        world.effects.fireLine(sx, sz, ex, ez, 1.2 * s);
+        world.effects.explode(ex, 1.2 * s, ez, 0.6);
+      } else {
+        world.effects.streak(sx, sz, ex, ez, sk.color);
+        world.effects.streak(sx, sz, ex, ez, sk.color);
+        world.effects.sparks(ex, 1.2, ez, sk.color, 18, 5);
+      }
       for (const o of world.fighters) {
         if (o === f || !o.alive || spared(f, o, world) || o.vanish > 0) continue;
         const wx = o.pos.x - f.pos.x, wz = o.pos.z - f.pos.z;
@@ -335,7 +350,7 @@ export function executeSkill(f, id, world) {
           if (sk.fx === 'lightning') w.effects.lightning(tx, tz);
           w.effects.ring(tx, 0.1, tz, sk.color, sk.radius * 1.3, 0.4);
           w.effects.sparks(tx, sk.fx === 'meteor' ? 2.5 : 0.8, tz, sk.color, 40, 9);
-          if (sk.fx === 'meteor') w.effects.dust(tx, tz, 3);
+          if (sk.fx === 'meteor') w.effects.explode(tx, 0.6, tz, 1.7, true);
           w.shake(0.35);
           for (const o of w.fighters) {
             if (o === f || !o.alive || spared(f, o, w) || o.vanish > 0) continue;

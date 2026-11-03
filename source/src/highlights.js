@@ -18,6 +18,7 @@ export const PROMO = {
   bulletExtra: 4.5,    // real seconds a bullet-time moment adds to its segment
   minScore: 2.5,       // a moment worth showing
   before: 1.5, after: 1.1,
+  maxSpan: 6,          // longest a single moment may grow (sustained fighting starts a new one)
 };
 
 const airborne = (f) => !!f && !f.grounded && f.pos.y > 0.35;
@@ -74,7 +75,7 @@ export class Highlights {
     const h = { kind, t, score, from: t - (o.before ?? PROMO.before), to: t + (o.after ?? PROMO.after), bullet: !!o.bullet, peak: o.peak ?? t };
     // fold into a moment that overlaps it
     for (const x of this.list) {
-      if (h.from < x.to && h.to > x.from) {
+      if (h.from < x.to && h.to > x.from && Math.max(x.to, h.to) - Math.min(x.from, h.from) <= PROMO.maxSpan) {
         x.from = Math.min(x.from, h.from); x.to = Math.max(x.to, h.to);
         if (h.bullet && !x.bullet) { x.bullet = true; x.peak = h.peak; x.kind = h.kind; }
         x.score += h.score;
@@ -98,7 +99,7 @@ export class Highlights {
     if (airborne(s)) this.add('aerialStrike', t, 6 + dmg / 8, { bullet: true, peak: t - 0.04 });
     // strings of hits grow one moment
     const c = this.combo;
-    if (c && t - c.last < 1.3) {
+    if (c && t - c.last < 1.3 && t + PROMO.after - c.h.from <= PROMO.maxSpan && this.list.includes(c.h)) {
       c.count++; c.last = t;
       c.h.to = Math.max(c.h.to, t + PROMO.after);
       c.h.score += 1 + dmg / 12 + (c.count >= 3 ? 0.8 : 0) + (d.perfect ? 0.6 : 0) + (d.juggle ? 1 : 0);
@@ -163,9 +164,15 @@ export class Highlights {
     const out = [];
     let total = 0;
     for (const h of ranked) {
-      const len = (h.to - h.from) + (h.bullet ? PROMO.bulletExtra : 0);
+      const len = Math.min(h.to - h.from, PROMO.maxSpan) + (h.bullet ? PROMO.bulletExtra : 0);
       if (out.length >= PROMO.segments || (out.length && total + len > PROMO.seconds)) continue;
-      out.push({ ...h });
+      const seg = { ...h };
+      // never longer than one moment may be, kept centred on its peak
+      if (seg.to - seg.from > PROMO.maxSpan) {
+        seg.from = Math.max(seg.from, Math.min(seg.peak - PROMO.before, seg.to - PROMO.maxSpan));
+        seg.to = seg.from + PROMO.maxSpan;
+      }
+      out.push(seg);
       total += len;
     }
     return out.sort((a, b) => a.from - b.from);

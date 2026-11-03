@@ -11,6 +11,7 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { Fighter, allies } from './fighter.js';
 import { CameraRig } from './camera.js';
+import { FocusDirector } from './focus.js';
 import { AIController, DummyController } from './ai.js';
 import { HumanController, devices } from './input.js';
 import { Hud } from './hud.js';
@@ -54,6 +55,7 @@ export class Game {
     this.friendlyFire = false;
     this.reviveOn = false;
     this.hud = new Hud(hudRoot);
+    this.focus = new FocusDirector(this, hudRoot);
     this.replay = new Replay(this);
     this.hill = new Hill(this);
 
@@ -620,6 +622,7 @@ export class Game {
         this.pickups.animate(this.time);
         this.effects.update(dt);
         this.arena.update(dt, this);
+        this.focus.update(dt);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;
@@ -642,6 +645,7 @@ export class Game {
         this.hill.animate(dt);
         this.pickups.animate(this.time);
         this.arena.update(dt * scale, this);
+        this.focus.update(dt);
         this.rig.update(dt, this.fighters);
         this.cameraForward = this.rig.forward;
         this.cameraRight = this.rig.right;

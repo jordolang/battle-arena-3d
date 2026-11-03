@@ -64,6 +64,19 @@ export const COMBAT = {
   friendlyFireMult: 0.6,
 };
 
+// Combo flow (fighter.js). Pressing the next hit of a string just as the last one connects is a
+// perfect link: more damage and a gold flash. After a blow, its recovery can be cut short by a
+// dodge (any time) or, if it landed, by a skill or the special; near the end of a recovery
+// the stick alone walks out of it. A launcher pops its target up for one follow-up in the air.
+export const COMBO = {
+  perfectEarly: 0.05,    // seconds before the active window ends that a press still counts as perfect
+  perfectLate: 0.11,     // seconds after it ends
+  perfectDamage: 1.2,    // damage multiplier on a perfect link
+  walkCancel: 0.55,      // share of a recovery after which moving cancels it
+  juggleHits: 1,         // follow-ups a launched fighter can take before they land
+  window: 1.3,           // seconds between hits before a combo count resets (HUD)
+};
+
 // Power-ups float above pads on the arena floor; walk through one to take it.
 // share is the chance weight when a pad picks what to spawn next.
 export const POWERUPS = {
@@ -129,13 +142,18 @@ export const MOVES = {
   jab2: { kind: 'punch', startup: 0.07, active: 0.08, recovery: 0.16, damage: 5, range: 1.55, arc: 1.4,
           knock: 2.6, hitstun: 0.3, lunge: 2.2, stamina: 5, chain: { punch: 'hook', kick: 'kick1' } },
   hook: { kind: 'punch', startup: 0.13, active: 0.1, recovery: 0.32, damage: 10, range: 1.7, arc: 1.7,
-          knock: 7.5, hitstun: 0.5, lunge: 3.2, heavy: true, stamina: 9, chain: {} },
+          knock: 7.5, hitstun: 0.5, lunge: 3.2, heavy: true, stamina: 9, chain: { punch: 'uppercut', kick: 'sweep' } },
   kick1: { kind: 'kick', startup: 0.16, active: 0.12, recovery: 0.3, damage: 10, range: 2.0, arc: 1.3,
            knock: 6.5, hitstun: 0.45, lunge: 2.6, stamina: 9, chain: { kick: 'kick2' } },
   kick2: { kind: 'kick', startup: 0.2, active: 0.14, recovery: 0.42, damage: 13, range: 2.1, arc: 2.4,
            knock: 9, hitstun: 0.6, lunge: 2.0, heavy: true, knockdown: true, stamina: 12, chain: {} },
   airkick: { kind: 'kick', startup: 0.06, active: 0.5, recovery: 0.2, damage: 10, range: 1.7, arc: 1.6,
              knock: 8, hitstun: 0.5, lunge: 0, heavy: true, knockdown: true, air: true, stamina: 8, chain: {} },
+  // combo enders after the hook (punch x4, or punch x3 then kick); added last so older move indexes keep their numbers
+  uppercut: { kind: 'punch', startup: 0.12, active: 0.1, recovery: 0.4, damage: 11, range: 1.6, arc: 1.5,
+              knock: 2.2, hitstun: 0.5, lunge: 2.4, heavy: true, knockdown: true, launch: 9.5, stamina: 11, chain: {} },
+  sweep: { kind: 'kick', startup: 0.15, active: 0.14, recovery: 0.4, damage: 10, range: 2.0, arc: 3.2,
+           knock: 4.5, hitstun: 0.5, lunge: 1.6, heavy: true, knockdown: true, low: true, stamina: 11, chain: {} },
 };
 
 export const SPECIALS = {

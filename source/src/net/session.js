@@ -19,7 +19,7 @@ import { EMOTE_IDS, ChatGate, cleanChat } from '../social.js';
 import { cleanTier } from '../fundraiser.js';
 import { teamsOf, seedBracket, nextMatch, recordWinner, champion, roundName, groupKey, cleanGroup, cleanText, findFundraiser, isFundraiserCode, verifyFundraiserCode } from './tournament.js';
 
-export const PROTOCOL = 11;
+export const PROTOCOL = 12;
 export const MAX_PLAYERS = 8;
 export const MAX_TOURNAMENT = 32;  // fighters and spectators in one tournament room
 export const QUEUE_SECONDS = 30;
@@ -59,7 +59,7 @@ const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'teleg
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',
-  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard', 'emote', 'taunt'];
+  'weaponBreak', 'armorBreak', 'respawn', 'hillMove', 'hazard', 'emote', 'taunt', 'perfect'];
 const SETTINGS_KEY = 'battle-arena.online.v1';
 
 const r2 = (v) => Math.round(v * 100) / 100;

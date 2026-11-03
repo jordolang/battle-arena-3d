@@ -430,7 +430,14 @@ function attackPose(move, side, p) {
   let windup, strike;
   const R = side > 0; // strike with right limb
   const sh = R ? 'shR' : 'shL', el = R ? 'elR' : 'elL', sz = R ? -1 : 1;
-  if (move.kind === 'punch' && !move.heavy) {
+  if (move.launch) { // rising uppercut: dip low, then drive up through the chin
+    windup = { ...guard, [sh]: [-0.1, 0, sz * 0.35], [el]: [-2.0, 0, 0], chest: [0.3, sz * -0.4, 0], spine: [0.25, 0, 0], lift: -0.24, knL: [1.1, 0, 0], knR: [1.1, 0, 0], hipL: [-0.7, 0, 0.12], hipR: [-0.6, 0, -0.12] };
+    strike = { ...guard, [sh]: [-3.0, 0, sz * 0.05], [el]: [-1.1, 0, 0], chest: [-0.25, sz * 0.4, 0], spine: [-0.2, sz * 0.2, 0], lift: 0.14, head: [-0.35, 0, 0], knL: [0.1, 0, 0], knR: [0.1, 0, 0] };
+  } else if (move.low) { // leg sweep: drop onto the back knee and swing the lead leg along the floor
+    const hip = R ? 'hipR' : 'hipL', kn = R ? 'knR' : 'knL', hip2 = R ? 'hipL' : 'hipR', kn2 = R ? 'knL' : 'knR';
+    windup = { ...guard, [hip2]: [-1.4, 0, 0], [kn2]: [2.3, 0, 0], [hip]: [-0.4, 0, sz * 0.3], [kn]: [0.6, 0, 0], spine: [0.35, sz * -0.5, 0], lift: -0.45 };
+    strike = { ...guard, [hip2]: [-1.5, 0, 0], [kn2]: [2.4, 0, 0], [hip]: [-0.2, 0, sz * 1.4], [kn]: [0.05, 0, 0], spine: [0.45, sz * 0.8, 0], chest: [0.1, sz * 0.4, 0], lift: -0.5 };
+  } else if (move.kind === 'punch' && !move.heavy) {
     windup = { ...guard, [sh]: [-0.5, 0, sz * 0.4], [el]: [-2.2, 0, 0], chest: [0.05, sz * -0.35, 0] };
     strike = { ...guard, [sh]: [-1.6, 0, sz * 0.05], [el]: [-0.05, 0, 0], chest: [0.12, sz * 0.55, 0], spine: [0.12, sz * 0.3, 0], lift: -0.08 };
   } else if (move.kind === 'punch') { // hook / uppercut

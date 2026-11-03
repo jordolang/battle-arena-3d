@@ -4,7 +4,7 @@ A 3D last-one-standing brawler in Three.js with three ways to play:
 - **Fight**: you against 1 to 7 CPU fighters, in an arena you pick or a random one each match.
 - **Fight online**: a 30-second public queue. Everyone who queues in the same 30 seconds fights in one free-for-all battle.
 - **Tournament**: fundraising groups team up and fight a knockout bracket on the Badlands, run by an admin, with spectators and live chat.
-- **Training**: a guided tutorial (14 short lessons: movement, combos, block, parry, backstab, skills, special, weapons,
+- **Training**: a guided tutorial (15 short lessons: movement, combos, combo enders, block, parry, backstab, skills, special, weapons,
   guns and spells) and a free practice room, both against a training dummy that cannot be knocked out.
 
 Every fighter has stamina, three castable skills matched to their class (Warrior, Ranged or Mage) and a special move.
@@ -212,6 +212,19 @@ Fight setup has **Players here** (1-4). Each local player uses their keyboard se
 the fighter list shows which device each one has, and the opening hints show the glyphs of the device in use.
 
 Combos: punch ×3 (ends in a hook), punch-punch-kick, kick-kick (knockdown roundhouse), jump then kick (dive kick).
+After the hook a fourth press ends the string: punch for an **uppercut** that launches (jump at once and kick to hit
+them once more in the air), kick for a **leg sweep** that knocks down.
+- **Perfect links**: press the next hit of a string just as the last one connects (from 0.05 s before its active
+  frames end to 0.11 s after) for 20% more damage, a gold flash and a PERFECT on the combo counter (`COMBO` in `config.js`).
+- **Cancels**: a dodge cuts any blow's recovery short; once a blow lands, a skill or the special can too; after a
+  launcher, a jump; and late in a recovery, simply moving walks out of it.
+- **Combo counter**: the running hit count and damage of your string, left of the fight (it resets after 1.3 s without a hit).
+- **Focus camera** (`src/focus.js`, Fight setup → Focus camera, on by default, `?focus=0` turns it off): when a fight
+  heats up around you (long combos, perfect links, specials, parries, knockouts nearby, low health, two or more
+  foes on top of you) the camera eases in close on your fighter and swings slowly to either side, with a dark green
+  vignette, then eases back out after a few seconds once things calm down (at most 8 s, then a 6 s rest). The fight
+  never slows down and your controls keep their usual directions while the view moves. It only runs when one person
+  on the device is fighting: not in couch play, while spectating or during the knockout replay.
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
 Sudden death (default 75 s) brings in a closing ring of fire.
 
@@ -301,7 +314,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   knockouts), and the José Madrid pieces need a fundraising group on the title screen. New unlocks are listed on the
   results screen. CPU fighters dress themselves, sometimes in gear you have not earned yet.
 - **Online**: your saved looks travel with you (`hello` and `pick` carry them; the host puts each fighter's look in the
-  match spec), so everyone sees what you wear. Protocol is now 7.
+  match spec), so everyone sees what you wear. Protocol is now 12 (12 added the uppercut, the sweep and perfect links).
 - **Storage and profiles**: the wardrobe (record, looks, usual fighter) is kept in this browser under
   `battle-arena.wardrobe.v1`. Player profiles take it over with `wardrobe.connectProfile(adapter)` in `src/cosmetics.js`:
   the adapter can supply the account's stats, items granted outright, fundraiser membership and saved looks, and
@@ -340,7 +353,7 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
-- `camera.js` framing camera · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
+- `camera.js` framing camera and the focus shot · `focus.js` when the focus camera kicks in, and the combo counter · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat

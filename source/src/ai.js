@@ -230,7 +230,7 @@ export class AIController {
       if (r < 0.55) {
         const hits = Math.random() < this.p.combo ? 3 : 1 + (Math.random() < 0.5 ? 1 : 0);
         for (let i = 0; i < hits; i++) this.press('punch', i * 0.2);
-        if (hits === 3 && Math.random() < this.p.combo * 0.3) { /* hook ends it */ }
+        if (hits === 3 && Math.random() < this.p.combo * 0.3) this.press('punch', 0.62); // the uppercut after the hook
         else if (Math.random() < this.p.combo * 0.5) this.press('kick', hits * 0.2);
       } else if (r < 0.85) {
         this.press('kick', 0);

@@ -55,7 +55,8 @@ const PROJECTILES = {
 };
 for (const id of SKILL_IDS) if (SKILLS[id].type === 'bolt') PROJECTILES[id] = { color: SKILLS[id].color, glow: SKILLS[id].glow, size: SKILLS[id].size, stretch: SKILLS[id].stretch };
 const PROJ_KINDS = Object.keys(PROJECTILES);
-const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'telegraph', 'lightning'];
+// effects sent by name: an older client ignores names it doesn't know, so new ones need no PROTOCOL bump
+const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'telegraph', 'lightning', 'fire', 'explode', 'fireLine'];
 const SYNC_EVENTS = ['hit', 'block', 'guardBreak', 'ko', 'swing', 'specialStart', 'special', 'specialFail', 'thunder',
   'spearPull', 'jump', 'land', 'wallHit', 'roundStart', 'fight', 'suddenDeath', 'roundEnd', 'matchEnd',
   'skillStart', 'skill', 'skillFail', 'dodge', 'dodgeFail', 'exhausted', 'shieldBreak', 'backstab', 'parry', 'revive', 'pickup',

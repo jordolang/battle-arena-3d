@@ -18,7 +18,7 @@ const SLOW = 0.3;                    // replay speed through the knockout itself
 const END_CARD = 1.6;                // seconds of title card closing the video
 const CLIP_EDGE = 1280;              // longest side of the recorded video, in pixels
 const MOVE_NAMES = Object.keys(MOVES);
-const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'lightning'];
+const FX = ['sparks', 'impact', 'dust', 'puff', 'streak', 'ring', 'cone', 'lightning', 'fire', 'explode', 'fireLine'];
 // events that only make sound; the replay re-emits them so the audio pass plays them again
 const SOUND_EVENTS = ['hazard', 'swing', 'hit', 'block', 'guardBreak', 'shieldBreak', 'wallHit', 'special', 'thunder', 'spearPull',
   'skill', 'dodge', 'jump', 'land', 'ko', 'weaponBreak', 'armorBreak'];

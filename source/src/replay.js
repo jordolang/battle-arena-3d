@@ -471,6 +471,8 @@ export class Replay {
 
   // ------------------------------------------------------------ the video file
   startRecorder(slot = 'video') {
+    // the knockout's video may still be on its closing card when the promo starts: finish it first
+    if (this.rec) { const prev = this.rec; this.rec = null; try { prev.stop(); } catch { /* already stopped */ } }
     const src = this.game.renderer.domElement;
     if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream || !src.width) return;
     const scale = Math.min(1, CLIP_EDGE / Math.max(src.width, src.height));
@@ -491,7 +493,8 @@ export class Replay {
     rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
     rec.onstop = () => {
       for (const tr of stream.getVideoTracks()) tr.stop();
-      try { this.audioStream && this.releaseStream?.(); } catch { /* ignore */ }
+      // the sound tap is shared, so leave it while another recording is running
+      try { if (!this.rec) this.audioStream && this.releaseStream?.(); } catch { /* ignore */ }
       const seconds = (performance.now() - started) / 1000;
       // a skipped replay still counts when there is no clip yet and it caught enough to show something
       if (!chunks.length || rec.discard || (rec.partial && (this[slot] || seconds < 2))) return;

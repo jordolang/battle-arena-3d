@@ -219,12 +219,15 @@ them once more in the air), kick for a **leg sweep** that knocks down.
 - **Cancels**: a dodge cuts any blow's recovery short; once a blow lands, a skill or the special can too; after a
   launcher, a jump; and late in a recovery, simply moving walks out of it.
 - **Combo counter**: the running hit count and damage of your string, left of the fight (it resets after 1.3 s without a hit).
-- **Focus camera** (`src/focus.js`, Fight setup → Focus camera, on by default, `?focus=0` turns it off): when a fight
-  heats up around you (long combos, perfect links, specials, parries, knockouts nearby, low health, two or more
-  foes on top of you) the camera eases in close on your fighter and swings slowly to either side, with a dark green
-  vignette, then eases back out after a few seconds once things calm down (at most 8 s, then a 6 s rest). The fight
-  never slows down and your controls keep their usual directions while the view moves. It only runs when one person
-  on the device is fighting: not in couch play, while spectating or during the knockout replay.
+- **Fight promo cam** (`src/highlights.js`, played by `src/replay.js`): after the knockout replay, your own fighter's
+  best moments of the match play back as a highlight reel (up to 5 moments, about 25 s): combos, heavy blows,
+  knockouts, parries, guard breaks and dodges, picked by score. Aerial plays that count go first and play in
+  **bullet time**: the action all but freezes while the camera sweeps low round your fighter, with a green grade. An
+  aerial play is a blow landed while in the air, or a jump that carries you over a projectile or a swing that was
+  coming straight for you and doesn't hit you; an ordinary jump never qualifies. The reel is recorded into its own
+  video, and the results screen offers Watch, Share and Save highlights. The fight itself is never touched: the
+  in-fight camera stays as it was. It follows the one person fighting on this device (online, your own fighter; in
+  couch play, player 1). Press Enter or tap to skip it.
 Block stops frontal hits but drains a guard meter that breaks. Specials cost half the blue mana bar.
 Sudden death (default 75 s) brings in a closing ring of fire.
 
@@ -353,13 +356,13 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
   the results screen's XP summary
 - `arena.js` coliseum, lighting, crowd, fire ring, collision · `battleground.js` the Badlands · `pickups.js` power-ups
 - `effects.js` pooled particles and FX
-- `camera.js` framing camera and the focus shot · `focus.js` when the focus camera kicks in, and the combo counter · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
+- `camera.js` framing camera · `combo.js` the combo counter · `hud.js` in-fight overlay · `ui.js` menus and key rebinding
 - `net/session.js` online rooms, the queue, tournaments and chat, host sync and client playback · `net/transport.js` PeerJS
   links and the queue beacon · `net/tournament.js` teams and bracket · `net/online-ui.js` queue screens ·
   `net/tourney-ui.js` tournament screens · `net/chat.js` live chat
 - `hill.js` king of the hill (ring, scoring, respawns, scoreboard) · `arcade.js` the arcade ladder and its boss
 - `social.js` emotes, taunts and quick chat · `friends.js` / `friends-ui.js` the friends list, presence and room invites
-- `replay.js` instant replay of the final knockout and its shareable video clip (`share.js` posts it)
+- `replay.js` instant replay of the final knockout, the fight promo reel with its bullet time, and their shareable video clips (`share.js` posts them) · `highlights.js` picks the promo's moments
 - `events.js` event bus · `audio.js` sound effects, announcer, crowd and music · `config.js` roster, frame data, skills, stamina, teams, bindings, AI tuning
 
 ## Extension points for later passes
@@ -370,11 +373,12 @@ Marked strikes (Meteor, Glacial Spike) show a circle under the target first; dod
 - **Online multiplayer:** built (see above). Every fighter is driven by a controller with `getIntent(fighter, world)`;
   remote players use `NetController` on the host. Online clients receive `events` too, with fighters resolved locally.
 - **Replays:** built. While a match runs, `replay.js` keeps the last 14 seconds of poses, projectiles, effects and
-  sound events (sampled 30 times a second). At match end it freezes the seconds around the deciding KO, plays them back
+  sound events (sampled 30 times a second), plus any older stretch a promo highlight covers (at most 12 are held). At match end it freezes the seconds around the deciding KO, plays them back
   with a cinematic camera and slow motion before the results, and records that playback (plus a title card) into an
   MP4 or WebM clip with `MediaRecorder`. Only the playback is encoded, so normal play pays almost nothing. The results
   screen offers Watch the knockout, Share the KO clip (the phone share sheet, or save plus the Facebook dialog on a
-  computer) and Save clip. `window.__arena.game.replay.stats()` shows the buffer and clip.
+  computer) and Save clip, and the same three for the promo reel. `window.__arena.game.replay.stats()` shows the buffer,
+  the clip, the reel and the highlights picked so far.
 - **Animation:** built. Stance, running, jumping, the duck-and-roll dodge and every punch and kick are real motion
   capture from the CMU Graphics Lab Motion Capture Database, retargeted onto the fighter's twelve joints by
   `tools/mocap/bake.mjs` and stored as compact quaternion frames in `src/mocapData.js` (about 33 KB). Attack clips are

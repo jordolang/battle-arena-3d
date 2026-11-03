@@ -18,7 +18,7 @@ export function moveSummary(def) {
 
 export function defaultSetup() {
   return {
-    count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, arena: 'random', quality: 'auto', focusCam: true, music: 70, sfx: 90,
+    count: 4, winsNeeded: 2, difficulty: 'normal', suddenDeath: 75, arena: 'random', quality: 'auto', music: 70, sfx: 90,
     players: 1, touch: 'auto', touchSize: 1, game: 'brawl',
     teams: { count: 0, names: [...TEAM_DEFAULT_NAMES] },
     slots: Array.from({ length: 8 }, (_, i) => ({ control: i === 0 ? 0 : 'cpu', fighter: i % ROSTER.length, team: i % 4 })),
@@ -309,6 +309,10 @@ export class Menus {
       case 'replay-watch': this.replay?.watch(); break;
       case 'clip-share': if (this.replay?.video) shareClip(this.replay.video, this.shareContext()).then((text) => this.shareMsg(text, 7000)); break;
       case 'clip-save': if (this.replay?.video) { saveClip(this.replay.video); this.shareMsg('Clip saved to your downloads.'); } break;
+      // the fight promo reel and its video
+      case 'promo-watch': this.replay?.watchPromo(); break;
+      case 'promo-share': if (this.replay?.promoVideo) shareClip(this.replay.promoVideo, this.shareContext()).then((text) => this.shareMsg(text, 7000)); break;
+      case 'promo-save': if (this.replay?.promoVideo) { saveClip(this.replay.promoVideo); this.shareMsg('Highlights saved to your downloads.'); } break;
       case 'reset-keys':
         DEFAULT_BINDINGS.forEach((b, i) => Object.assign(this.bindings[i], b));
         saveBindings(this.bindings); this.renderControls(); this.focusAct('reset-keys'); break;
@@ -330,6 +334,9 @@ export class Menus {
     el.querySelector('[data-act="replay-watch"]').hidden = !this.replay?.canPlay;
     el.querySelector('[data-act="clip-share"]').hidden = !this.replay?.video;
     el.querySelector('[data-act="clip-save"]').hidden = !this.replay?.video;
+    el.querySelector('[data-act="promo-watch"]').hidden = !this.replay?.canPlayPromo;
+    el.querySelector('[data-act="promo-share"]').hidden = !this.replay?.promoVideo;
+    el.querySelector('[data-act="promo-save"]').hidden = !this.replay?.promoVideo;
   }
 
   // What a share button posts: the last match from the results screen, plus the online room to join
@@ -394,7 +401,7 @@ export class Menus {
     const key = el.dataset.opt, i = +el.dataset.i;
     const cyc = (arr, v) => arr[(arr.indexOf(v) + d + arr.length) % arr.length];
     if (['touch', 'touchsize', 'rumble', 'seat'].includes(key)) { this.changeDevice(el, d); return; }
-    if (!['game', 'count', 'wins', 'diff', 'sudden', 'arena', 'quality', 'focuscam', 'music', 'sfx', 'control', 'fighter', 'teams', 'team', 'players'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
+    if (!['game', 'count', 'wins', 'diff', 'sudden', 'arena', 'quality', 'music', 'sfx', 'control', 'fighter', 'teams', 'team', 'players'].includes(key)) { this.cb.onOpt?.(key, el, d); return; }
     switch (key) {
       case 'game': s.game = s.game === 'hill' ? 'brawl' : 'hill'; break;
       case 'count': s.count = Math.min(8, Math.max(2, s.players, s.count + d)); break;
@@ -404,7 +411,6 @@ export class Menus {
       case 'sudden': s.suddenDeath = cyc(SUDDEN, s.suddenDeath); break;
       case 'arena': s.arena = cyc(ARENA_CHOICES, s.arena || 'random'); break;
       case 'quality': s.quality = cyc(QUALITY, s.quality); this.cb.onQualityChange?.(s.quality); break;
-      case 'focuscam': s.focusCam = s.focusCam === false; this.cb.onFocusCamChange?.(s.focusCam); break;
       case 'music': s.music = Math.min(100, Math.max(0, s.music + d * 10)); this.cb.onVolumeChange?.({ music: s.music / 100 }); break;
       case 'sfx': s.sfx = Math.min(100, Math.max(0, s.sfx + d * 10)); this.cb.onVolumeChange?.({ sfx: s.sfx / 100 }); break;
       case 'teams': s.teams.count = cyc(TEAM_COUNTS, s.teams.count); break;
@@ -446,7 +452,6 @@ export class Menus {
       s.game === 'hill' ? '' : opt('sudden', 'Sudden death', s.suddenDeath ? `after ${s.suddenDeath}s` : 'Off'),
       s.game === 'hill' ? '' : opt('arena', 'Arena', arenaLabel(s.arena)),
       opt('quality', 'Graphics', { auto: 'Auto', high: 'High', low: 'Low' }[s.quality]),
-      opt('focuscam', 'Focus camera', s.focusCam === false ? 'Off' : 'On'),
       opt('music', 'Music', s.music ? `${s.music}%` : 'Off'),
       opt('sfx', 'Sound effects', s.sfx ? `${s.sfx}%` : 'Off'),
     ].join('');

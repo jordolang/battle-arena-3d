@@ -71,6 +71,7 @@ function boot() {
     onRestart: () => { menus.hideAll(); game.setPaused(false); if (training.kind) { training.restart(); return; } if (arcade.active) { arcade.restartStage(); return; } for (const f of game.fighters) f.stats = { kos: 0, damage: 0, wins: 0 }; game.startMatch(lastSetup, bindings); },
     onQuit: () => { training.stop(); arcade.stop(); audio.setScene('title'); game.setPaused(false); game.keyboard.captureGameKeys = false; game.startDemo(); menus.show('title'); },
     onQualityChange: (q) => game.setQuality(q),
+    onFocusCamChange: (on) => game.focus.setEnabled(on),
     onVolumeChange: (v) => audio.setVolumes(v),
     onTouchChange: (s) => applyTouch(s),
     pads,
@@ -116,6 +117,7 @@ function boot() {
   devices.touch = touch;
   const applyTouch = (s) => { touch.setSize(s.touchSize || 1); touch.vibrate = pads.rumbleOn; };
   applyTouch(menus.setup);
+  game.focus.setEnabled(params.get('focus') !== '0' && menus.setup.focusCam !== false);
   const toastEl = document.createElement('div');
   toastEl.id = 'pad-toast';
   document.body.appendChild(toastEl);
@@ -189,6 +191,7 @@ function boot() {
   events.on('hit', (d) => { buzz(d.fighter, d.heavy ? 0.85 : 0.35, d.heavy ? 0.6 : 0.4, d.heavy ? 230 : 110); buzz(d.by, 0, d.heavy ? 0.35 : 0.18, 60); });
   events.on('block', (d) => buzz(d.fighter, 0.12, 0.3, 70));
   events.on('parry', (d) => buzz(d.fighter, 0, 0.7, 90));
+  events.on('perfect', (d) => buzz(d.fighter, 0, 0.45, 70));
   events.on('guardBreak', (d) => buzz(d.fighter, 0.7, 0.5, 260));
   events.on('ko', (d) => { buzz(d.fighter, 1, 1, 480); buzz(d.by, 0.3, 0.5, 160); });
   events.on('fight', () => { for (const f of game.fighters) buzz(f, 0.25, 0.25, 120); });

@@ -1,7 +1,7 @@
 // Fighter simulation: state machine, movement, attacks and taking hits.
 import * as THREE from 'three';
 import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST, GUARD_MAX, PLAYER_COLORS,
-  STAMINA, STAMINA_MAX, DODGE, COMBAT, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
+  STAMINA, STAMINA_MAX, DODGE, COMBAT, COMBO, WEAPONS, ARMOR_SOAK, ARMOR_POINTS, BELT_SIZE } from './config.js';
 import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 import { dressFighter } from './wardrobeModels.js';
@@ -91,6 +91,10 @@ export class Fighter {
     this.attackSide = 1;
     this.attackPhase = 0;
     this.hitSet = new Set();
+    this.perfect = false;     // this blow was linked on the beat (COMBO.perfect*)
+    this.juggle = 0;          // follow-ups this fighter can still take while launched
+    this.lean = 0;            // forward lean from speed (visual only)
+    this.roll = 0;            // sideways lean from turning (visual only)
     this.buffer = null;
     this.hitstop = 0;
     this.invuln = 0;
@@ -446,16 +450,17 @@ export class Fighter {
   // Attacking out of a cloak reveals you.
   uncloak() { if (this.vanish > 0) { this.vanish = 0; this.updateBuffVisuals(); } }
 
-  startAttack(name, world) {
+  startAttack(name, world, perfect = false) {
     this.uncloak();
     const move = MOVES[name];
     this.move = move;
     this.moveName = name;
+    this.perfect = perfect;
     this.sprinting = false;
     this.setState('attack');
     this.spendStamina(move.stamina || 0, world);
     this.hitSet.clear();
-    this.attackSide = name === 'jab1' || name === 'kick1' || name === 'hook' ? 1 : name === 'jab2' || name === 'kick2' ? -1 : 1;
+    this.attackSide = name === 'jab1' || name === 'kick1' || name === 'hook' ? 1 : name === 'jab2' || name === 'kick2' || name === 'uppercut' || name === 'sweep' ? -1 : 1;
     // soft lock-on toward whoever is closest in front (or in the input direction)
     const it = this.intent;
     const moving = Math.hypot(it.mx, it.mz) > 0.1;
@@ -500,20 +505,56 @@ export class Fighter {
       const k = m.lunge * (1 - t / activeEnd);
       this.vel.x = f.x * k; this.vel.z = f.z * k;
     }
-    // chaining into the next hit
+    // chaining into the next hit; a press timed as the last blow connects is a perfect link
     const b = this.buffer?.action;
     if (b && (b === 'punch' || b === 'kick') && t > m.startup + m.active * 0.5 && m.chain[b]) {
+      const pressedAt = t - (world.time - this.buffer.time);
+      const perfect = this.hitSet.size > 0 && pressedAt >= activeEnd - COMBO.perfectEarly && pressedAt <= activeEnd + COMBO.perfectLate;
       this.consumeBuffer();
-      this.startAttack(m.chain[b], world);
+      this.startAttack(m.chain[b], world, perfect);
+      if (perfect) {
+        const f = this.forward();
+        world.effects.sparks(this.pos.x + f.x * 0.6, 1.4, this.pos.z + f.z * 0.6, 0xffd23a, 10, 4);
+        world.events.emit('perfect', { fighter: this, move: m.chain[b] });
+      }
       return;
     }
+    if (t >= activeEnd && this.cancelRecovery(b, t - activeEnd, world)) return;
     if (t >= activeEnd + m.recovery) this.setState('idle');
+  }
+
+  // Cutting a blow's recovery short: a dodge any time, a skill or the special once the blow landed,
+  // a jump after a launcher connects (to chase the fighter up), and plain movement near the end.
+  cancelRecovery(action, intoRecovery, world) {
+    const m = this.move;
+    const landed = this.hitSet.size > 0;
+    if (action === 'dash') { this.consumeBuffer(); if (this.startDodge(world)) return true; }
+    if (landed && this.grounded) {
+      if (action === 'skill1' || action === 'skill2' || action === 'skill3') {
+        this.consumeBuffer();
+        if (this.startSkill(+action.slice(5) - 1, world)) return true;
+      } else if (action === 'special' && this.energy >= SPECIAL_COST) {
+        this.consumeBuffer();
+        this.startSpecial(world);
+        return true;
+      } else if (action === 'jump' && m.launch) {
+        this.consumeBuffer();
+        this.setState('idle');
+        this.vel.y = 9.2; this.grounded = false; this.airAttackUsed = false;
+        this.spendStamina(STAMINA.jump, world);
+        world.events.emit('jump', { fighter: this });
+        return true;
+      }
+    }
+    const it = this.intent;
+    if (intoRecovery >= m.recovery * COMBO.walkCancel && Math.hypot(it.mx, it.mz) > 0.5) { this.setState('idle'); return true; }
+    return false;
   }
 
   checkHits(world) {
     if (world.predict) return; // an online guest's look-ahead copy: only the host lands blows
     const m = this.move;
-    const power = this.dmgMult();
+    const power = this.dmgMult() * (this.perfect ? COMBO.perfectDamage : 1);
     // a weapon in hand turns punches into slashes, chops or crushing blows
     const W = this.weapon && m.kind === 'punch' ? WEAPONS[this.weapon] : null;
     const range = m.range * this.def.scale + (W ? W.range : 0);
@@ -534,7 +575,7 @@ export class Fighter {
         poison: W.bleed, poisonColor: W.bleed ? 0xff2a2a : undefined,
       } : {
         damage: m.damage * power, knock: m.knock, hitstun: m.hitstun, knockdown: !!m.knockdown,
-        heavy: !!m.heavy, dx: nx, dz: nz, kind: m.kind, move: this.moveName,
+        heavy: !!m.heavy, dx: nx, dz: nz, kind: m.kind, move: this.moveName, launch: m.launch, perfect: this.perfect,
       }, world);
       if (res !== 'ignored') this.hitstop = Math.max(this.hitstop, m.heavy || W ? 0.09 : 0.05);
       if (W && res !== 'ignored' && --this.weaponHits <= 0) {
@@ -663,7 +704,11 @@ export class Fighter {
     if (!this.alive || this.invuln > 0 || this.vanish > 0) return 'ignored';
     const friendly = allies(src, this);
     if (friendly && !world.friendlyFire) return 'ignored';
-    if (this.state === 'knockdown' || this.state === 'getup') return 'ignored';
+    // a launched fighter can take a follow-up or two before they land; otherwise the downed are left alone
+    const juggled = this.state === 'knockdown' && !this.grounded && this.juggle > 0 && !friendly &&
+      (h.kind === 'punch' || h.kind === 'kick' || !!h.melee);
+    if (!juggled && (this.state === 'knockdown' || this.state === 'getup')) return 'ignored';
+    if (juggled) { this.juggle--; h = { ...h, knockdown: true, juggle: true }; }
     const blocking = (this.state === 'block' || this.state === 'blockstun') && !h.unblockable;
     const toSrcX = -h.dx, toSrcZ = -h.dz;
     const f = this.forward();
@@ -760,10 +805,10 @@ export class Fighter {
       }
     }
     this.energy = Math.min(ENERGY_MAX, this.energy + dmg * 0.7);
-    this.hitstop = h.heavy ? 0.09 : 0.05;
+    this.hitstop = h.heavy || h.perfect ? 0.09 : 0.05;
     const px = this.pos.x - h.dx * 0.25, pz = this.pos.z - h.dz * 0.25;
     world.effects.impact(px, h.kind === 'kick' ? 1.1 : 1.35, pz, h.heavy ? 1.6 : 1, h.color);
-    world.events.emit('hit', { fighter: this, by: src, damage: dmg, heavy: !!h.heavy, kind: h.kind, move: h.move, weapon: h.weapon || null, ko: !this.alive });
+    world.events.emit('hit', { fighter: this, by: src, damage: dmg, heavy: !!h.heavy, kind: h.kind, move: h.move, weapon: h.weapon || null, ko: !this.alive, juggle: !!h.juggle, perfect: !!h.perfect });
     if (h.heavy) world.shake(h.knockdown ? 0.35 : 0.22);
 
     if (h.poison) { this.poison = Math.max(this.poison, h.poison); this.poisonBy = src; this.poisonColor = h.poisonColor || 0x9dff3a; }
@@ -797,7 +842,8 @@ export class Fighter {
     this.vel.x = h.dx * h.knock; this.vel.z = h.dz * h.knock;
     if (h.knockdown) {
       this.facing = Math.atan2(-h.dx, -h.dz); // fall away from the hit
-      this.vel.y = 4.5; this.grounded = false;
+      this.vel.y = h.launch || (h.juggle ? 5.5 : 4.5); this.grounded = false;
+      if (!h.juggle) this.juggle = h.launch ? COMBO.juggleHits : 0;
       this.setState('knockdown', 0.9);
     } else {
       this.setState('hitstun', h.hitstun);
@@ -937,7 +983,19 @@ export class Fighter {
     if (this.state === 'knockdown' || this.state === 'ko') fall = Math.min(1, this.stateTime / 0.32);
     else if (this.state === 'getup') fall = 1 - Math.min(1, this.stateTime / this.stateDuration);
     const ang = -Math.PI / 2 * (fall * fall * (3 - 2 * fall));
-    m.body.rotation.x = ang;
+    // lean into speed and turns while on the move, so starts, stops and pivots read as weight shifting
+    if (dt > 0) {
+      const f = this.forward();
+      const base = BASE_SPEED * this.def.speed;
+      const ahead = (this.vel.x * f.x + this.vel.z * f.z) / base;
+      const side = (this.vel.x * f.z - this.vel.z * f.x) / base;
+      const moving = this.state === 'idle' && this.grounded;
+      const k = Math.min(1, dt * 8);
+      this.lean += ((moving ? THREE.MathUtils.clamp(ahead, -0.6, 1.5) * 0.09 : 0) - this.lean) * k;
+      this.roll += ((moving ? THREE.MathUtils.clamp(side, -1, 1) * -0.08 : 0) - this.roll) * k;
+    }
+    m.body.rotation.x = ang + this.lean * (1 - fall);
+    m.body.rotation.z = this.roll * (1 - fall);
     m.body.position.y = 0.16 * fall;
     if (this.state === 'frozen' || this.hitstop > 0 && this.state !== 'attack') { if (dt === 0) return; }
     if (this.state !== 'frozen' && dt > 0) {

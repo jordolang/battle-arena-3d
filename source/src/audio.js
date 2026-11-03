@@ -261,6 +261,7 @@ export function initAudio(events, { getCamera } = {}) {
     else play('punch_heavy', { fighter, gain: 0.55 * loud, rate: 0.9 });
     if (heavy) roar(0.4, 0.6);
   });
+  events.on('perfect', ({ fighter }) => play('block', { fighter, gain: 0.4, rate: 1.6 }));
   events.on('block', ({ fighter, heavy }) => play('block', { fighter, gain: heavy ? 0.85 : 0.6 }));
   events.on('guardBreak', ({ fighter }) => { play('guardbreak', { fighter, gain: 0.85 }); roar(0.6); });
   events.on('shieldBreak', ({ fighter }) => play('guardbreak', { fighter, gain: 0.7, rate: 1.15 }));

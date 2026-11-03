@@ -9,7 +9,7 @@ import { MeshoptDecoder } from '../vendor/addons/libs/meshopt_decoder.module.js'
 import { clone as cloneSkinned } from '../vendor/addons/utils/SkeletonUtils.js';
 
 // Fighter ids that have a model file at models/<id>.glb.
-export const REAL_MODEL_IDS = ['titan'];
+export const REAL_MODEL_IDS = ['titan', 'ember', 'frost', 'shade'];
 
 // Procedural joint -> [model bone, bone that marks the end of that segment, the joint's own
 // segment direction in its rest pose]. Bone names follow the rigger's Mixamo-style skeleton,

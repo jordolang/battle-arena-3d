@@ -19,7 +19,7 @@ Power-ups, backstabs, parries and (in tournaments) friendly fire and revives mak
   then copy `dist/battle-arena.html` to the repo root as `index.html` and `dist/models/` to the repo root as `models/`.
 
 ## Fighter models
-- Fighters listed in `REAL_MODEL_IDS` (`src/realModels.js`, Titan so far) have a rigged, textured body in
+- Fighters listed in `REAL_MODEL_IDS` (`src/realModels.js`, Titan, Ember, Frost and Shade) have a rigged, textured body in
   `models/<id>.glb`, made from reference art with Higgsfield image-to-3D (auto-rigged, PBR textures). The game loads
   them from `models/` next to the page (or `window.ARENA_MODEL_BASE`) while the menus open.
 - The procedural skeleton still drives every pose, mocap clip and combo; the model's bones copy the joints' rotations

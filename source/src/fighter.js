@@ -5,6 +5,7 @@ import { MOVES, SPECIALS, SKILLS, BASE_SPEED, GRAVITY, ENERGY_MAX, SPECIAL_COST,
 import { buildFighterModel, computePose, applyPose, applyTeamOutfit, applyReward, setGear, setArmorVisible, animateLife } from './fighterModel.js';
 import { executeSpecial, executeSkill } from './specials.js';
 import { dressFighter } from './wardrobeModels.js';
+import { useRealModel } from './realModels.js';
 import { bodyDef } from './cosmetics.js';
 import { EMOTES, EMOTE_LOCK, TAUNT_ENERGY, TAUNT_COOLDOWN } from './social.js';
 
@@ -29,6 +30,7 @@ export class Fighter {
     this.controller = controller;
     this.name = def.name;
     this.model = dressFighter(buildFighterModel(bodyDef(def, look)), def, look);
+    useRealModel(this.model, def.id);
     this.look = this.model.look;
     this.radius = 0.42 * def.scale;
     this.maxHp = def.health;
